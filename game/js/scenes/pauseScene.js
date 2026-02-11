@@ -1,0 +1,165 @@
+import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
+import { input } from '../input.js';
+
+const MENU_ITEMS = [
+  { label: 'Resume',    enabled: true },
+  { label: 'Main Menu', enabled: false },
+  { label: 'Quit',      enabled: false },
+];
+
+class PauseScene {
+  constructor(game) {
+    this.game = game;
+    this.selectedIndex = 0;
+    this.itemHitboxes = [];
+  }
+
+  enter() {
+    this.selectedIndex = 0;
+  }
+
+  exit() {}
+
+  update(dt) {
+    // Escape / pause action → resume
+    if (input.isActionJustPressed('pause')) {
+      this.game.popScene();
+      return;
+    }
+
+    // Keyboard navigation
+    if (input.isActionJustPressed('moveUp')) {
+      this._moveToPreviousEnabled();
+    } else if (input.isActionJustPressed('moveDown')) {
+      this._moveToNextEnabled();
+    }
+
+    // Keyboard select
+    if (input.isKeyJustPressed('Enter') || input.isActionJustPressed('interact')) {
+      this._executeSelected();
+    }
+
+    // Mouse hover
+    const mouse = input.getMousePos();
+    for (let i = 0; i < this.itemHitboxes.length; i++) {
+      const hb = this.itemHitboxes[i];
+      if (!MENU_ITEMS[i].enabled) continue;
+      if (
+        mouse.x >= hb.x && mouse.x <= hb.x + hb.w &&
+        mouse.y >= hb.y && mouse.y <= hb.y + hb.h
+      ) {
+        this.selectedIndex = i;
+        break;
+      }
+    }
+
+    // Mouse click
+    if (input.isMouseJustPressed(0)) {
+      for (let i = 0; i < this.itemHitboxes.length; i++) {
+        const hb = this.itemHitboxes[i];
+        if (!MENU_ITEMS[i].enabled) continue;
+        if (
+          mouse.x >= hb.x && mouse.x <= hb.x + hb.w &&
+          mouse.y >= hb.y && mouse.y <= hb.y + hb.h
+        ) {
+          this._executeItem(i);
+          break;
+        }
+      }
+    }
+  }
+
+  render(ctx) {
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    // Title
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 72px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('PAUSED', CANVAS_WIDTH / 2, 150);
+
+    // Menu items
+    const startY = 300;
+    const spacing = 60;
+    const hitboxHeight = 40;
+    const hitboxPadding = 20;
+    this.itemHitboxes = [];
+
+    ctx.font = '32px monospace';
+
+    for (let i = 0; i < MENU_ITEMS.length; i++) {
+      const item = MENU_ITEMS[i];
+      const y = startY + i * spacing;
+
+      let text;
+      if (!item.enabled) {
+        ctx.fillStyle = '#666666';
+        text = item.label;
+      } else if (i === this.selectedIndex) {
+        ctx.fillStyle = '#00ffff';
+        text = `> ${item.label} <`;
+      } else {
+        ctx.fillStyle = '#ffffff';
+        text = item.label;
+      }
+
+      ctx.fillText(text, CANVAS_WIDTH / 2, y);
+
+      // Cache hitbox
+      const metrics = ctx.measureText(text);
+      const w = metrics.width + hitboxPadding * 2;
+      this.itemHitboxes.push({
+        x: CANVAS_WIDTH / 2 - w / 2,
+        y: y - hitboxHeight / 2,
+        w,
+        h: hitboxHeight,
+      });
+    }
+  }
+
+  onInput(event) {}
+
+  // --- Navigation helpers ---
+
+  _moveToNextEnabled() {
+    const len = MENU_ITEMS.length;
+    for (let offset = 1; offset < len; offset++) {
+      const idx = (this.selectedIndex + offset) % len;
+      if (MENU_ITEMS[idx].enabled) {
+        this.selectedIndex = idx;
+        return;
+      }
+    }
+  }
+
+  _moveToPreviousEnabled() {
+    const len = MENU_ITEMS.length;
+    for (let offset = 1; offset < len; offset++) {
+      const idx = (this.selectedIndex - offset + len) % len;
+      if (MENU_ITEMS[idx].enabled) {
+        this.selectedIndex = idx;
+        return;
+      }
+    }
+  }
+
+  _executeSelected() {
+    if (MENU_ITEMS[this.selectedIndex].enabled) {
+      this._executeItem(this.selectedIndex);
+    }
+  }
+
+  _executeItem(index) {
+    switch (index) {
+      case 0: // Resume
+        this.game.popScene();
+        break;
+      // Main Menu and Quit are stubs — no action
+    }
+  }
+}
+
+export { PauseScene };
