@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Controller QTE — Level Editor</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0e0e1a;
+    color: #ccc;
+    font-family: 'Courier New', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 12px;
+    user-select: none;
+  }
+  h1 { color: #fff; font-size: 18px; margin-bottom: 8px; }
+
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .toolbar label { font-size: 12px; color: #aaa; }
+
+  .palette {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    background: #16162a;
+    padding: 6px 10px;
+    border-radius: 6px;
+    border: 1px solid #333;
+  }
+  .palette-btn {
+    width: 36px; height: 36px;
+    border: 2px solid #444;
+    border-radius: 4px;
+    cursor: pointer;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #aaa;
+  }
+  .palette-btn.selected { border-color: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.4); }
+  .palette-btn .key-hint {
+    position: absolute;
+    top: -1px; right: 1px;
+    font-size: 8px;
+    color: #666;
+  }
+
+  .btn {
+    padding: 6px 14px;
+    background: #2a2a4a;
+    color: #ddd;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+  }
+  .btn:hover { background: #3a3a5a; }
+  .btn.primary { background: #2a5a2a; border-color: #4a8a4a; }
+  .btn.primary:hover { background: #3a7a3a; }
+  .btn.danger { background: #5a2a2a; border-color: #8a4a4a; }
+  .btn.danger:hover { background: #7a3a3a; }
+  .btn.active { background: #4a4a1a; border-color: #8a8a4a; }
+
+  #editorCanvas {
+    border: 2px solid #444;
+    cursor: crosshair;
+    image-rendering: pixelated;
+    display: block;
+  }
+  #editorCanvas.playing { cursor: default; }
+
+  .status {
+    margin-top: 6px;
+    font-size: 11px;
+    color: #888;
+    text-align: center;
+    min-height: 16px;
+  }
+
+  .level-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .tab {
+    padding: 4px 12px;
+    background: #1a1a2e;
+    border: 1px solid #333;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    color: #aaa;
+  }
+  .tab:hover { background: #2a2a3e; }
+  .tab.active { background: #2a2a5a; border-color: #6a6aaa; color: #fff; }
+  .tab .x {
+    margin-left: 6px;
+    color: #844;
+    font-weight: bold;
+  }
+  .tab .x:hover { color: #f66; }
+
+  .export-area {
+    margin-top: 10px;
+    width: 100%;
+    max-width: 920px;
+  }
+  .export-area textarea {
+    width: 100%;
+    height: 200px;
+    background: #111;
+    color: #8f8;
+    border: 1px solid #333;
+    border-radius: 4px;
+    padding: 8px;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    resize: vertical;
+  }
+  .export-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+  }
+  .export-header span { font-size: 12px; color: #aaa; }
+
+  .help {
+    margin-top: 8px;
+    font-size: 10px;
+    color: #666;
+    text-align: center;
+    max-width: 920px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Controller QTE — Level Editor</h1>
+
+<div class="level-tabs" id="tabs"></div>
+
+<div class="toolbar">
+  <div class="palette" id="palette"></div>
+  <button class="btn primary" id="playBtn" title="Test the level (Enter)">&#9654; Play</button>
+  <button class="btn" id="clearBtn" title="Clear all tiles">Clear</button>
+  <button class="btn" id="fillFloorBtn" title="Fill bottom 2 rows with solid">Fill Floor</button>
+  <button class="btn" id="addLevelBtn" title="Add a new level tab">+ New Level</button>
+  <button class="btn primary" id="exportBtn" title="Export all levels">Export All</button>
+  <button class="btn" id="importBtn" title="Import levels from export text">Import</button>
+</div>
+
+<canvas id="editorCanvas"></canvas>
+<div class="status" id="status">Click to paint tiles. Press 1-5 to switch tile. Enter to playtest.</div>
+
+<div class="export-area" id="exportArea" style="display:none;">
+  <div class="export-header">
+    <span>Exported LAYOUT_STRINGS — paste into controllerQte.js</span>
+    <button class="btn" id="copyBtn">Copy</button>
+  </div>
+  <textarea id="exportText" readonly></textarea>
+</div>
+
+<div class="help">
+  <b>Keys:</b> 1=Air 2=Solid 3=Spike 4=Goal 5=Player &nbsp;|&nbsp;
+  Click/drag to paint &nbsp;|&nbsp; Right-click to erase &nbsp;|&nbsp;
+  Enter=Play/Stop &nbsp;|&nbsp; WASD/Arrows+Space=Move in play mode &nbsp;|&nbsp;
+  Ctrl+Z=Undo Ctrl+Y=Redo
+</div>
+
+<script>
+// ── Constants (match controllerQte.js exactly) ──────────────────────────
+const TILE = 16;
+const COLS = 28;
+const ROWS = 10;
+const CHAR_SIZE = 14;
+const GRAVITY = 825;
+const JUMP_VEL = -285;
+const MOVE_SPEED = 210;
+const COYOTE_TIME = 0.06;
+const TIME_LIMIT = 3.5;
+
+const SCALE = 3;
+const CW = COLS * TILE * SCALE;
+const CH = ROWS * TILE * SCALE;
+
+const AIR = 0, SOLID = 1, SPIKE = 2, GOAL = 3, PLAYER = 4;
+const TILE_CHARS = ['.', '#', 'S', 'G', 'P'];
+const TILE_NAMES = ['Air', 'Solid', 'Spike', 'Goal', 'Player'];
+const TILE_COLORS = [null, '#555577', '#e74c3c', '#44ff88', '#00ffff'];
+
+// ── State ───────────────────────────────────────────────────────────────
+let levels = [createEmptyLevel()];
+let currentLevel = 0;
+let selectedTile = SOLID;
+let painting = false;
+let erasing = false;
+let playing = false;
+let undoStack = [];
+let redoStack = [];
+
+// Play state
+let char = null;
+let keysHeld = {};
+let jumpPressed = false;
+let playTimer = 0;
+let playResult = null;
+let playResultTimer = 0;
+
+const canvas = document.getElementById('editorCanvas');
+const ctx = canvas.getContext('2d');
+canvas.width = CW;
+canvas.height = CH;
+
+// ── Level management ────────────────────────────────────────────────────
+function createEmptyLevel() {
+  const grid = [];
+  for (let r = 0; r < ROWS; r++) {
+    grid[r] = [];
+    for (let c = 0; c < COLS; c++) {
+      grid[r][c] = AIR;
+    }
+  }
+  return { grid, name: 'Untitled' };
+}
+
+function cloneGrid(grid) {
+  return grid.map(row => [...row]);
+}
+
+function getGrid() { return levels[currentLevel].grid; }
+
+function saveUndo() {
+  undoStack.push({ level: currentLevel, grid: cloneGrid(getGrid()) });
+  if (undoStack.length > 100) undoStack.shift();
+  redoStack = [];
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const snap = undoStack.pop();
+  redoStack.push({ level: snap.level, grid: cloneGrid(levels[snap.level].grid) });
+  levels[snap.level].grid = snap.grid;
+  currentLevel = snap.level;
+  renderTabs();
+  render();
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  const snap = redoStack.pop();
+  undoStack.push({ level: snap.level, grid: cloneGrid(levels[snap.level].grid) });
+  levels[snap.level].grid = snap.grid;
+  currentLevel = snap.level;
+  renderTabs();
+  render();
+}
+
+// ── Palette ─────────────────────────────────────────────────────────────
+function buildPalette() {
+  const pal = document.getElementById('palette');
+  pal.innerHTML = '';
+  for (let i = 0; i <= 4; i++) {
+    const btn = document.createElement('div');
+    btn.className = 'palette-btn' + (i === selectedTile ? ' selected' : '');
+    btn.title = `${TILE_NAMES[i]} (${i + 1})`;
+    btn.dataset.tile = i;
+    btn.innerHTML = `<span class="key-hint">${i + 1}</span>`;
+
+    if (i === AIR) {
+      btn.style.background = '#1a1a2e';
+      btn.textContent = '·';
+      btn.innerHTML += `<span class="key-hint">1</span>`;
+    } else if (i === SPIKE) {
+      // Draw a mini triangle via CSS
+      btn.style.background = '#1a1a2e';
+      btn.innerHTML = `<svg width="20" height="20"><polygon points="2,18 10,3 18,18" fill="#e74c3c"/></svg><span class="key-hint">3</span>`;
+    } else {
+      btn.style.background = TILE_COLORS[i];
+    }
+
+    btn.addEventListener('mousedown', (e) => {
+      e.stopPropagation();
+      selectedTile = i;
+      buildPalette();
+    });
+    pal.appendChild(btn);
+  }
+}
+
+// ── Tabs ────────────────────────────────────────────────────────────────
+function renderTabs() {
+  const tabsEl = document.getElementById('tabs');
+  tabsEl.innerHTML = '';
+  levels.forEach((lvl, i) => {
+    const tab = document.createElement('div');
+    tab.className = 'tab' + (i === currentLevel ? ' active' : '');
+    tab.innerHTML = `Level ${i + 1}`;
+    if (levels.length > 1) {
+      const x = document.createElement('span');
+      x.className = 'x';
+      x.textContent = '×';
+      x.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (levels.length <= 1) return;
+        levels.splice(i, 1);
+        if (currentLevel >= levels.length) currentLevel = levels.length - 1;
+        renderTabs();
+        render();
+      });
+      tab.appendChild(x);
+    }
+    tab.addEventListener('click', () => {
+      if (playing) stopPlay();
+      currentLevel = i;
+      undoStack = [];
+      redoStack = [];
+      renderTabs();
+      render();
+    });
+    tabsEl.appendChild(tab);
+  });
+}
+
+// ── Canvas coords ───────────────────────────────────────────────────────
+function canvasToTile(e) {
+  const rect = canvas.getBoundingClientRect();
+  const mx = (e.clientX - rect.left) / rect.width * CW;
+  const my = (e.clientY - rect.top) / rect.height * CH;
+  const col = Math.floor(mx / (TILE * SCALE));
+  const row = Math.floor(my / (TILE * SCALE));
+  return { col: Math.max(0, Math.min(COLS - 1, col)), row: Math.max(0, Math.min(ROWS - 1, row)) };
+}
+
+function setTile(row, col, tile) {
+  const grid = getGrid();
+  if (tile === PLAYER) {
+    // Only one player — remove any existing
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (grid[r][c] === PLAYER) grid[r][c] = AIR;
+  }
+  if (tile === GOAL) {
+    // Only one goal
+    for (let r = 0; r < ROWS; r++)
+      for (let c = 0; c < COLS; c++)
+        if (grid[r][c] === GOAL) grid[r][c] = AIR;
+  }
+  grid[row][col] = tile;
+}
+
+// ── Editor input ────────────────────────────────────────────────────────
+canvas.addEventListener('mousedown', (e) => {
+  if (playing) return;
+  e.preventDefault();
+  const { row, col } = canvasToTile(e);
+  if (e.button === 2) {
+    erasing = true;
+    saveUndo();
+    setTile(row, col, AIR);
+  } else {
+    painting = true;
+    saveUndo();
+    setTile(row, col, selectedTile);
+  }
+  render();
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (playing) return;
+  if (!painting && !erasing) return;
+  const { row, col } = canvasToTile(e);
+  const tile = erasing ? AIR : selectedTile;
+  setTile(row, col, tile);
+  render();
+});
+
+window.addEventListener('mouseup', () => {
+  painting = false;
+  erasing = false;
+});
+
+canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+window.addEventListener('keydown', (e) => {
+  if (playing) {
+    switch (e.code) {
+      case 'KeyA': case 'ArrowLeft':  keysHeld.left = true; break;
+      case 'KeyD': case 'ArrowRight': keysHeld.right = true; break;
+      case 'KeyW': case 'ArrowUp': case 'Space':
+        keysHeld.jump = true;
+        if (!e.repeat) jumpPressed = true;
+        break;
+      case 'Enter': case 'Escape': stopPlay(); break;
+    }
+    e.preventDefault();
+    return;
+  }
+
+  // Editor shortcuts
+  if (e.key >= '1' && e.key <= '5') {
+    selectedTile = parseInt(e.key) - 1;
+    buildPalette();
+  }
+  if (e.code === 'Enter') { startPlay(); e.preventDefault(); }
+  if (e.ctrlKey && e.code === 'KeyZ') { undo(); e.preventDefault(); }
+  if (e.ctrlKey && e.code === 'KeyY') { redo(); e.preventDefault(); }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (!playing) return;
+  switch (e.code) {
+    case 'KeyA': case 'ArrowLeft':  keysHeld.left = false; break;
+    case 'KeyD': case 'ArrowRight': keysHeld.right = false; break;
+    case 'KeyW': case 'ArrowUp': case 'Space': keysHeld.jump = false; break;
+  }
+});
+
+// ── Buttons ─────────────────────────────────────────────────────────────
+document.getElementById('playBtn').addEventListener('click', () => {
+  if (playing) stopPlay(); else startPlay();
+});
+
+document.getElementById('clearBtn').addEventListener('click', () => {
+  if (playing) return;
+  saveUndo();
+  levels[currentLevel].grid = createEmptyLevel().grid;
+  render();
+});
+
+document.getElementById('fillFloorBtn').addEventListener('click', () => {
+  if (playing) return;
+  saveUndo();
+  const grid = getGrid();
+  for (let c = 0; c < COLS; c++) {
+    if (grid[ROWS - 1][c] === AIR) grid[ROWS - 1][c] = SOLID;
+    if (grid[ROWS - 2][c] === AIR) grid[ROWS - 2][c] = SOLID;
+  }
+  render();
+});
+
+document.getElementById('addLevelBtn').addEventListener('click', () => {
+  if (playing) stopPlay();
+  levels.push(createEmptyLevel());
+  currentLevel = levels.length - 1;
+  undoStack = [];
+  redoStack = [];
+  renderTabs();
+  render();
+});
+
+document.getElementById('exportBtn').addEventListener('click', exportAll);
+document.getElementById('importBtn').addEventListener('click', importLevels);
+document.getElementById('copyBtn').addEventListener('click', () => {
+  const ta = document.getElementById('exportText');
+  ta.select();
+  navigator.clipboard.writeText(ta.value);
+  setStatus('Copied to clipboard!');
+});
+
+// ── Export / Import ─────────────────────────────────────────────────────
+function gridToStrings(grid) {
+  const lines = [];
+  for (let r = 0; r < ROWS; r++) {
+    let line = '';
+    for (let c = 0; c < COLS; c++) {
+      line += TILE_CHARS[grid[r][c]] || '.';
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function exportAll() {
+  const area = document.getElementById('exportArea');
+  area.style.display = 'block';
+
+  let out = 'const LAYOUT_STRINGS = [\n';
+  levels.forEach((lvl, i) => {
+    const strings = gridToStrings(lvl.grid);
+    out += `  // Layout ${i}${lvl.name !== 'Untitled' ? ' — ' + lvl.name : ''}\n`;
+    out += '  [\n';
+    strings.forEach(line => {
+      out += `    '${line}',\n`;
+    });
+    out += '  ],\n';
+  });
+  out += '];\n';
+
+  document.getElementById('exportText').value = out;
+  setStatus(`Exported ${levels.length} level(s).`);
+}
+
+function importLevels() {
+  const text = prompt('Paste exported LAYOUT_STRINGS code (or raw level arrays):');
+  if (!text) return;
+
+  // Parse: find all arrays of 10 strings
+  const layoutRegex = /\[\s*((?:'[^']*',?\s*){2,})\]/g;
+  const stringRegex = /'([^']*)'/g;
+  let match;
+  const imported = [];
+
+  while ((match = layoutRegex.exec(text)) !== null) {
+    const block = match[1];
+    const strings = [];
+    let sm;
+    while ((sm = stringRegex.exec(block)) !== null) {
+      strings.push(sm[1]);
+    }
+    stringRegex.lastIndex = 0;
+    if (strings.length >= ROWS) {
+      const grid = [];
+      for (let r = 0; r < ROWS; r++) {
+        grid[r] = [];
+        const line = strings[r] || '';
+        for (let c = 0; c < COLS; c++) {
+          const ch = line[c] || '.';
+          switch (ch) {
+            case '#': grid[r][c] = SOLID; break;
+            case 'S': grid[r][c] = SPIKE; break;
+            case 'G': grid[r][c] = GOAL; break;
+            case 'P': grid[r][c] = PLAYER; break;
+            default:  grid[r][c] = AIR; break;
+          }
+        }
+      }
+      imported.push({ grid, name: 'Imported' });
+    }
+  }
+
+  if (imported.length === 0) {
+    alert('No valid levels found in the pasted text.');
+    return;
+  }
+
+  levels = imported;
+  currentLevel = 0;
+  undoStack = [];
+  redoStack = [];
+  renderTabs();
+  render();
+  setStatus(`Imported ${imported.length} level(s).`);
+}
+
+// ── Play mode ───────────────────────────────────────────────────────────
+function findTile(grid, type) {
+  for (let r = 0; r < ROWS; r++)
+    for (let c = 0; c < COLS; c++)
+      if (grid[r][c] === type) return { col: c, row: r };
+  return null;
+}
+
+function startPlay() {
+  const grid = getGrid();
+  const start = findTile(grid, PLAYER);
+  if (!start) { setStatus('Place a Player start (P) tile first!'); return; }
+  const goal = findTile(grid, GOAL);
+  if (!goal) { setStatus('Place a Goal (G) tile first!'); return; }
+
+  playing = true;
+  playResult = null;
+  playResultTimer = 0;
+  playTimer = 0;
+  keysHeld = {};
+  jumpPressed = false;
+
+  char = {
+    x: start.col * TILE + TILE / 2,
+    y: start.row * TILE + TILE / 2,
+    vx: 0, vy: 0,
+    onGround: false,
+    coyoteTimer: 0,
+  };
+
+  canvas.classList.add('playing');
+  document.getElementById('playBtn').textContent = '■ Stop';
+  document.getElementById('playBtn').classList.add('active');
+  setStatus('Playing! WASD/Arrows to move, W/Up/Space to jump. Enter/Esc to stop.');
+  requestAnimationFrame(playLoop);
+}
+
+function stopPlay() {
+  playing = false;
+  char = null;
+  canvas.classList.remove('playing');
+  document.getElementById('playBtn').textContent = '▶ Play';
+  document.getElementById('playBtn').classList.remove('active');
+  setStatus('Click to paint tiles. Press 1-5 to switch tile. Enter to playtest.');
+  render();
+}
+
+let lastTime = 0;
+function playLoop(timestamp) {
+  if (!playing) return;
+  if (!lastTime) lastTime = timestamp;
+  let dt = (timestamp - lastTime) / 1000;
+  lastTime = timestamp;
+  if (dt > 0.05) dt = 0.05; // cap
+
+  if (playResult) {
+    playResultTimer += dt;
+    if (playResultTimer > 1.5) { stopPlay(); return; }
+    render();
+    requestAnimationFrame(playLoop);
+    return;
+  }
+
+  playTimer += dt;
+  if (playTimer >= TIME_LIMIT) {
+    playResult = 'TIME UP';
+    render();
+    requestAnimationFrame(playLoop);
+    return;
+  }
+
+  updateChar(dt);
+  render();
+  requestAnimationFrame(playLoop);
+}
+
+function updateChar(dt) {
+  const grid = getGrid();
+
+  // Horizontal
+  char.vx = 0;
+  if (keysHeld.left)  char.vx -= MOVE_SPEED;
+  if (keysHeld.right) char.vx += MOVE_SPEED;
+
+  // Jump
+  if (jumpPressed && (char.onGround || char.coyoteTimer > 0)) {
+    char.vy = JUMP_VEL;
+    char.onGround = false;
+    char.coyoteTimer = 0;
+  }
+  jumpPressed = false;
+
+  // Gravity
+  char.vy += GRAVITY * dt;
+
+  // Move X
+  char.x += char.vx * dt;
+  resolveX(grid);
+
+  // Move Y
+  const wasGround = char.onGround;
+  char.y += char.vy * dt;
+  resolveY(grid);
+
+  if (wasGround && !char.onGround && char.vy >= 0) {
+    char.coyoteTimer = COYOTE_TIME;
+  }
+  if (char.coyoteTimer > 0) char.coyoteTimer -= dt;
+
+  // Fall off
+  if (char.y > ROWS * TILE + CHAR_SIZE) {
+    playResult = 'FELL!';
+    return;
+  }
+
+  // Spike
+  if (checkTile(grid, SPIKE)) {
+    playResult = 'SPIKED!';
+    return;
+  }
+
+  // Goal
+  if (checkTile(grid, GOAL)) {
+    playResult = 'SUCCESS!';
+    return;
+  }
+}
+
+function getTile(grid, r, c) {
+  if (r < 0 || r >= ROWS || c < 0 || c >= COLS) return AIR;
+  const t = grid[r][c];
+  return (t === PLAYER) ? AIR : t; // player tile is air for physics
+}
+
+function resolveX(grid) {
+  const half = CHAR_SIZE / 2;
+  const left = char.x - half, right = char.x + half;
+  const top = char.y - half + 1, bottom = char.y + half - 1;
+  const colL = Math.floor(left / TILE), colR = Math.floor(right / TILE);
+  const rowT = Math.floor(top / TILE), rowB = Math.floor(bottom / TILE);
+
+  for (let r = rowT; r <= rowB; r++) {
+    for (let c = colL; c <= colR; c++) {
+      if (getTile(grid, r, c) !== SOLID) continue;
+      if (char.vx > 0) char.x = c * TILE - half;
+      else if (char.vx < 0) char.x = (c + 1) * TILE + half;
+      char.vx = 0;
+    }
+  }
+  char.x = Math.max(half, Math.min(COLS * TILE - half, char.x));
+}
+
+function resolveY(grid) {
+  const half = CHAR_SIZE / 2;
+  const left = char.x - half + 1, right = char.x + half - 1;
+  const top = char.y - half, bottom = char.y + half;
+  const colL = Math.floor(left / TILE), colR = Math.floor(right / TILE);
+  const rowT = Math.floor(top / TILE), rowB = Math.floor(bottom / TILE);
+
+  char.onGround = false;
+  for (let r = rowT; r <= rowB; r++) {
+    for (let c = colL; c <= colR; c++) {
+      if (getTile(grid, r, c) !== SOLID) continue;
+      if (char.vy > 0) {
+        char.y = r * TILE - half;
+        char.vy = 0;
+        char.onGround = true;
+      } else if (char.vy < 0) {
+        char.y = (r + 1) * TILE + half;
+        char.vy = 0;
+      }
+    }
+  }
+}
+
+function checkTile(grid, type) {
+  const half = CHAR_SIZE / 2;
+  const m = 3;
+  const left = char.x - half + m, right = char.x + half - m;
+  const top = char.y - half + m, bottom = char.y + half - m;
+  const colL = Math.floor(left / TILE), colR = Math.floor(right / TILE);
+  const rowT = Math.floor(top / TILE), rowB = Math.floor(bottom / TILE);
+
+  for (let r = rowT; r <= rowB; r++)
+    for (let c = colL; c <= colR; c++)
+      if (getTile(grid, r, c) === type) return true;
+  return false;
+}
+
+// ── Rendering ───────────────────────────────────────────────────────────
+function render() {
+  ctx.clearRect(0, 0, CW, CH);
+  ctx.save();
+  ctx.scale(SCALE, SCALE);
+
+  const grid = getGrid();
+
+  // Background
+  ctx.fillStyle = '#1a1a2e';
+  ctx.fillRect(0, 0, COLS * TILE, ROWS * TILE);
+
+  // Grid lines (editor only, faint)
+  if (!playing) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 0.5;
+    for (let c = 0; c <= COLS; c++) {
+      ctx.beginPath();
+      ctx.moveTo(c * TILE, 0);
+      ctx.lineTo(c * TILE, ROWS * TILE);
+      ctx.stroke();
+    }
+    for (let r = 0; r <= ROWS; r++) {
+      ctx.beginPath();
+      ctx.moveTo(0, r * TILE);
+      ctx.lineTo(COLS * TILE, r * TILE);
+      ctx.stroke();
+    }
+  }
+
+  // Tiles
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const tile = grid[r][c];
+      const tx = c * TILE, ty = r * TILE;
+
+      switch (tile) {
+        case SOLID:
+          ctx.fillStyle = '#555577';
+          ctx.fillRect(tx, ty, TILE, TILE);
+          ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(tx + 0.5, ty + 0.5, TILE - 1, TILE - 1);
+          break;
+        case SPIKE:
+          ctx.fillStyle = '#e74c3c';
+          ctx.beginPath();
+          ctx.moveTo(tx, ty + TILE);
+          ctx.lineTo(tx + TILE / 2, ty + 2);
+          ctx.lineTo(tx + TILE, ty + TILE);
+          ctx.closePath();
+          ctx.fill();
+          break;
+        case GOAL:
+          ctx.fillStyle = '#44ff88';
+          const pulse = playing ? 0.6 + 0.4 * Math.sin(playTimer * 6) : 0.8;
+          ctx.globalAlpha = pulse;
+          ctx.fillRect(tx + 2, ty + 2, TILE - 4, TILE - 4);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = '#44ff88';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(tx + 1, ty + 1, TILE - 2, TILE - 2);
+          break;
+        case PLAYER:
+          if (!playing) {
+            ctx.fillStyle = '#00ffff';
+            ctx.globalAlpha = 0.5;
+            ctx.fillRect(tx + 1, ty + 1, TILE - 2, TILE - 2);
+            ctx.globalAlpha = 1;
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(tx + 1, ty + 1, TILE - 2, TILE - 2);
+          }
+          break;
+      }
+    }
+  }
+
+  // Character (play mode)
+  if (playing && char) {
+    const half = CHAR_SIZE / 2;
+    ctx.fillStyle = '#00ffff';
+    ctx.fillRect(char.x - half, char.y - half, CHAR_SIZE, CHAR_SIZE);
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(char.x - half, char.y - half, CHAR_SIZE, CHAR_SIZE);
+  }
+
+  ctx.restore();
+
+  // HUD overlay for play mode
+  if (playing) {
+    // Timer bar
+    const barW = CW * 0.6;
+    const barH = 10;
+    const barX = (CW - barW) / 2;
+    const barY = 8;
+    const frac = Math.max(0, 1 - playTimer / TIME_LIMIT);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = frac < 0.25 ? '#e74c3c' : '#ffffff';
+    ctx.fillRect(barX, barY, barW * frac, barH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+
+    // Timer text
+    ctx.fillStyle = '#fff';
+    ctx.font = '12px Courier New';
+    ctx.textAlign = 'right';
+    ctx.fillText(Math.max(0, TIME_LIMIT - playTimer).toFixed(1) + 's', barX + barW, barY + barH + 14);
+
+    // Result overlay
+    if (playResult) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, 0, CW, CH);
+      ctx.font = 'bold 32px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = playResult === 'SUCCESS!' ? '#44ff88' : '#e74c3c';
+      ctx.fillText(playResult, CW / 2, CH / 2);
+    }
+  }
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+// ── Init ────────────────────────────────────────────────────────────────
+buildPalette();
+renderTabs();
+render();
+</script>
+</body>
+</html>

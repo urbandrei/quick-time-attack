@@ -13,6 +13,7 @@ export class Level {
     this.rooms = layoutData.rooms.map(r => new Room(r));
     this.hallways = this._buildHallways(layoutData.hallways);
     this.walls = this._buildWalls();
+    this.startRoomIndex = layoutData.playerStart.room;
 
     // Compute player start position
     const startRoom = this.rooms[layoutData.playerStart.room];
@@ -22,6 +23,11 @@ export class Level {
     );
     this.playerStartX = start.x;
     this.playerStartY = start.y;
+
+    // Exit hole position — center of starting room
+    const startRoomObj = this.rooms[layoutData.playerStart.room];
+    this.exitHoleX = startRoomObj.floorX + startRoomObj.floorWidth / 2;
+    this.exitHoleY = startRoomObj.floorY + startRoomObj.floorHeight / 2;
   }
 
   // ── Hallway construction ──────────────────────────────────────────
@@ -238,6 +244,77 @@ export class Level {
   /** All collision wall segments (rooms + hallways, with openings removed). */
   getWalls() {
     return this.walls;
+  }
+
+  /** Build a room adjacency list from hallway connections. */
+  getAdjacencyList() {
+    const adj = this.rooms.map(() => []);
+    for (const h of this.hallways) {
+      const a = h.openings[0].roomIndex;
+      const b = h.openings[1].roomIndex;
+      adj[a].push({ room: b, hallway: h });
+      adj[b].push({ room: a, hallway: h });
+    }
+    return adj;
+  }
+
+  /** BFS to find the room with greatest graph distance from `fromRoomIndex`. */
+  getFarthestRoom(fromRoomIndex) {
+    const adj = this.getAdjacencyList();
+    const visited = new Set([fromRoomIndex]);
+    const queue = [fromRoomIndex];
+    let farthest = fromRoomIndex;
+    while (queue.length > 0) {
+      const current = queue.shift();
+      farthest = current;
+      for (const { room } of adj[current]) {
+        if (!visited.has(room)) {
+          visited.add(room);
+          queue.push(room);
+        }
+      }
+    }
+    return farthest;
+  }
+
+  /** BFS shortest path, returns world-space waypoints (hallway mid → room center). */
+  findPath(fromRoomIndex, toRoomIndex) {
+    if (fromRoomIndex === toRoomIndex) return [];
+    const adj = this.getAdjacencyList();
+    const prev = new Map();
+    const visited = new Set([fromRoomIndex]);
+    const queue = [fromRoomIndex];
+
+    while (queue.length > 0) {
+      const current = queue.shift();
+      if (current === toRoomIndex) break;
+      for (const { room, hallway } of adj[current]) {
+        if (!visited.has(room)) {
+          visited.add(room);
+          prev.set(room, { from: current, hallway });
+          queue.push(room);
+        }
+      }
+    }
+
+    // Reconstruct path as waypoints
+    const waypoints = [];
+    let cur = toRoomIndex;
+    while (prev.has(cur)) {
+      const { from, hallway } = prev.get(cur);
+      const destRoom = this.rooms[cur];
+      waypoints.push({
+        x: destRoom.floorX + destRoom.floorWidth / 2,
+        y: destRoom.floorY + destRoom.floorHeight / 2,
+      });
+      waypoints.push({
+        x: hallway.floor.x + hallway.floor.w / 2,
+        y: hallway.floor.y + hallway.floor.h / 2,
+      });
+      cur = from;
+    }
+    waypoints.reverse(); // now: hallway center, room center, hallway center, ...
+    return waypoints;
   }
 
   render(ctx) {

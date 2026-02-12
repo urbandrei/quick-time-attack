@@ -6,6 +6,7 @@ export const PLAYER_SPEED = 250;
 export const PLAYER_WALL_RADIUS = 12;
 export const PLAYER_BULLET_RADIUS = 4;
 export const PLAYER_STARTING_LIVES = 3;
+export const PLAYER_MAX_LIVES = 5;
 export const INVULN_DURATION = 1; // seconds
 const BLINK_INTERVAL = 0.08; // seconds between visibility toggles
 
@@ -15,10 +16,15 @@ export class Player extends Entity {
     this.wallRadius = PLAYER_WALL_RADIUS;
     this.bulletRadius = PLAYER_BULLET_RADIUS;
     this.speed = PLAYER_SPEED;
+    this.vx = 0;
+    this.vy = 0;
     this.lives = PLAYER_STARTING_LIVES;
     this.invulnerable = false;
     this.invulnTimer = 0;
     this.dead = false;
+
+    // Movement tracking for squash/stretch
+    this._wasMoving = false;
   }
 
   damage() {
@@ -47,6 +53,16 @@ export class Player extends Entity {
     this.dead = false;
   }
 
+  /**
+   * Grant an extra life, capped at PLAYER_MAX_LIVES.
+   * @returns {boolean} true if a life was actually added
+   */
+  addLife() {
+    if (this.lives >= PLAYER_MAX_LIVES) return false;
+    this.lives++;
+    return true;
+  }
+
   update(dt, walls) {
     if (this.dead) return;
 
@@ -72,11 +88,27 @@ export class Player extends Entity {
       dy *= inv;
     }
 
+    // Detect movement start/stop for squash/stretch
+    const isMoving = dx !== 0 || dy !== 0;
+    if (isMoving && !this._wasMoving) {
+      this.stretch(0.15, 0.12);
+    } else if (!isMoving && this._wasMoving) {
+      this.squash(0.15, 0.1);
+    }
+    this._wasMoving = isMoving;
+
+    // Expose velocity for predictive aiming (e.g. Cowboy enemy)
+    this.vx = dx * this.speed;
+    this.vy = dy * this.speed;
+
     // Per-axis movement + collision for smooth slide-along behavior
     this.x += dx * this.speed * dt;
     resolveWallCollision(this, walls, { useCircle: true, radius: this.wallRadius });
     this.y += dy * this.speed * dt;
     resolveWallCollision(this, walls, { useCircle: true, radius: this.wallRadius });
+
+    // Tick scale tween
+    this._updateScale(dt);
   }
 
   render(ctx) {

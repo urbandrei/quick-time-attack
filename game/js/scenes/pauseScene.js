@@ -3,7 +3,8 @@ import { input } from '../input.js';
 
 const MENU_ITEMS = [
   { label: 'Resume',    enabled: true },
-  { label: 'Main Menu', enabled: false },
+  { label: 'Settings',  enabled: true },
+  { label: 'Main Menu', enabled: true },
   { label: 'Quit',      enabled: false },
 ];
 
@@ -76,7 +77,7 @@ class PauseScene {
 
     // Title
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 72px monospace';
+    ctx.font = '36px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('PAUSED', CANVAS_WIDTH / 2, 150);
@@ -88,7 +89,7 @@ class PauseScene {
     const hitboxPadding = 20;
     this.itemHitboxes = [];
 
-    ctx.font = '32px monospace';
+    ctx.font = '16px "Press Start 2P"';
 
     for (let i = 0; i < MENU_ITEMS.length; i++) {
       const item = MENU_ITEMS[i];
@@ -157,7 +158,17 @@ class PauseScene {
       case 0: // Resume
         this.game.popScene();
         break;
-      // Main Menu and Quit are stubs — no action
+      case 1: // Settings
+        import('./settingsScene.js').then(({ SettingsScene }) => {
+          this.game.pushScene(new SettingsScene(this.game));
+        });
+        break;
+      case 2: // Main Menu
+        this.game.scenes[0]._returnFromGameplay = true;
+        this.game.popScene(); // remove PauseScene
+        this.game.popScene(); // remove GameplayScene
+        break;
+      // Quit is a stub — no action
     }
   }
 }

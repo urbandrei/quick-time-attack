@@ -84,7 +84,7 @@ export class BatQTE extends QTE {
 
     // Instruction text
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 20px monospace';
+    ctx.font = '12px "Press Start 2P"';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('Click the Bat!', CANVAS_WIDTH / 2, 68);

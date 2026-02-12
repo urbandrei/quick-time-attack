@@ -4,18 +4,17 @@ import { PauseScene } from './pauseScene.js';
 import { GameOverScene } from './gameOverScene.js';
 import { QTEScene } from './qteScene.js';
 import { Level } from '../levels/level.js';
-import { LEVEL_LAYOUTS } from '../levels/levelData.js';
+import { LevelManager, CHALLENGE_TYPES } from '../levels/levelManager.js';
 import { getWallSegments, checkCircleCollision, checkAABB } from '../collision.js';
 import { Player } from '../player.js';
 import { Camera } from '../camera.js';
 import { BulletPool } from '../bullet.js';
-import { Enemy } from '../enemies/enemy.js';
-import { Bat } from '../enemies/bat.js';
-
-// Map spawn-point type → class (fall back to base Enemy for unimplemented types)
-const ENEMY_CLASSES = {
-  bat: Bat,
-};
+import { HUD } from '../hud.js';
+import { spawnEnemies, spawnChallengeEnemy } from '../levels/enemySpawner.js';
+import { achievements } from '../systems/achievements.js';
+import { HitstopManager } from '../systems/hitstop.js';
+import { ScreenFlash } from '../systems/screenFlash.js';
+import { ParticlePool, emitDeathBurst, emitWallDust } from '../systems/particles.js';
 
 // Number of frames within which a bullet hit is nullified by a QTE trigger
 const QTE_PRIORITY_FRAMES = 3;
@@ -23,29 +22,97 @@ const QTE_PRIORITY_FRAMES = 3;
 // QTE blast constants
 const BLAST_RADIUS = 240;          // half room width
 const KNOCKBACK_FORCE = 400;       // px/s initial impulse
-const QTE_SUCCESS_SCORE = 100;     // base score per QTE kill
-const BULLET_CANCEL_SCORE = 5;     // bonus per bullet destroyed in blast
 const RETREAT_KNOCKBACK_FORCE = 300; // enemy retreat force on QTE failure
 
+// Level timer
+const LEVEL_TIME_LIMIT = 30; // seconds
+
+// Exit hole
+const EXIT_HOLE_RADIUS = 24;
+const EXIT_HOLE_COLOR = '#050510';
+const EXIT_HOLE_BORDER_COLOR = '#44ff88';
+const EXIT_HOLE_FLEE_COLOR = '#ff4444';
+const EXIT_HOLE_BORDER_WIDTH = 3;
+
+// Challenge room
+const CHALLENGE_SPAWN_INTERVAL = 3;   // seconds between enemy spawns
+const CHALLENGE_SAFE_TIME = 5;        // last N seconds the hole turns green
+
+// Boss
+const BOSS_MAX_HP = 5;
+const BOSS_SPAWN_INTERVAL = 4;        // seconds between enemy spawns
+
+// Key follow / homing
+const KEY_FOLLOW_SPEED = 3;         // lerp factor while trailing player
+const KEY_HOMING_ACCEL = 1200;      // px/s² acceleration toward hole
+const KEY_ARRIVAL_DIST = 4;         // px — close enough to count as arrived
+
+// Transition animation
+const FALL_DURATION = 0.4;     // seconds — player shrinks downward into hole
+const SPLASH_DURATION = 1.5;   // seconds — challenge splash screen
+const LAND_DURATION = 0.35;    // seconds — player drops from above
+const SQUASH_DURATION = 0.12;  // seconds — impact squash recovery
+const LAND_DROP_HEIGHT = 300;  // pixels above landing point
+
 class GameplayScene {
-  constructor(game) {
+  constructor(game, { startWithLanding = false } = {}) {
     this.game = game;
+    this._startWithLanding = startWithLanding;
   }
 
   enter() {
-    if (this.player) return;
+    // Guard against re-init when returning from overlay (pause, QTE, game over)
+    if (this._initialized) return;
+    this._initialized = true;
 
-    // Build the level from the first layout
-    this.level = new Level(LEVEL_LAYOUTS[0]);
+    this.levelManager = new LevelManager();
+    this.challengeDisplayName = '';
+    this.hud = new HUD();
+    this.hitstop = new HitstopManager();
+    this.screenFlash = new ScreenFlash();
+    this.particles = new ParticlePool();
+    this.transition = null;
+    this.enemiesKilled = 0;
+    this.enemiesKilledThisFloor = 0;
+    this.runStartTime = performance.now();
 
-    // Cache wall segments for collision
+    achievements.onGameStart();
+
+    this._initLevel();
+
+    // Start with splash + landing animation when entering from main menu
+    if (this._startWithLanding) {
+      this.transition = { phase: 'splash', timer: 0 };
+      this._startWithLanding = false;
+    }
+  }
+
+  exit() {}
+
+  /**
+   * Build (or rebuild) the current level: layout, enemies, timer, exit state.
+   * Preserves player lives and levelDepth across levels.
+   */
+  _initLevel() {
+    // Reset per-floor kill counter
+    this.enemiesKilledThisFloor = 0;
+
+    // Advance to next level and get layout + challenge info
+    const levelInfo = this.levelManager.advance();
+    this.challengeDisplayName = levelInfo.displayName;
+    this.level = new Level(levelInfo.layout);
     this.walls = getWallSegments(this.level);
 
-    // Place the player at the level's designated start
-    this.player = new Player({
-      x: this.level.playerStartX,
-      y: this.level.playerStartY,
-    });
+    // Create or reposition the player
+    if (!this.player) {
+      this.player = new Player({
+        x: this.level.playerStartX,
+        y: this.level.playerStartY,
+      });
+    } else {
+      this.player.x = this.level.playerStartX;
+      this.player.y = this.level.playerStartY;
+    }
 
     // Camera — snap to player immediately so there's no lerp-from-origin
     this.camera = new Camera();
@@ -54,27 +121,135 @@ class GameplayScene {
     // Bullet pool
     this.bullets = new BulletPool();
 
-    // Spawn enemies from room spawn-point data
-    this.enemies = [];
-    for (const room of this.level.rooms) {
-      for (const sp of room.getWorldSpawnPoints()) {
-        const EnemyClass = ENEMY_CLASSES[sp.type] || Enemy;
-        this.enemies.push(new EnemyClass({ x: sp.x, y: sp.y, enemyType: sp.type }));
-      }
-    }
-
     // QTE priority tracking
     this.frameCount = 0;
     this.bulletDamageFrame = -Infinity;
     this.qteActive = false;
 
-    // Score
-    this.score = 0;
+    // Level timer
+    this.levelTimer = LEVEL_TIME_LIMIT;
+
+    // Challenge completion & exit hole
+    this.challengeComplete = false;
+    this.exitHole = null;
+    this.gameOverPushed = false;
+
+    // Key item (Find the Key challenge)
+    this.keyItem = null;
+    this.hasKey = false;
+    if (levelInfo.challengeType === CHALLENGE_TYPES.FIND_THE_KEY && levelInfo.keyRoomIndex != null) {
+      const keyRoom = this.level.rooms[levelInfo.keyRoomIndex];
+      this.keyItem = {
+        x: keyRoom.floorX + keyRoom.floorWidth / 2,
+        y: keyRoom.floorY + keyRoom.floorHeight / 2,
+        radius: 10,
+        collected: false,
+        homing: false,
+        homingSpeed: 0,
+      };
+    }
+
+    // Coffee Break — exit open immediately, no timer
+    if (levelInfo.challengeType === CHALLENGE_TYPES.COFFEE_BREAK) {
+      this.challengeComplete = true;
+      this.exitHole = {
+        x: this.level.exitHoleX,
+        y: this.level.exitHoleY,
+        radius: EXIT_HOLE_RADIUS,
+      };
+      this.timerActive = false;
+      achievements.onCoffeeBreak();
+    } else {
+      this.timerActive = true;
+    }
+
+    // Boss — continuous spawning, 5 QTEs to win
+    this.bossHP = 0;
+    this.bossMaxHP = 0;
+    this.bossSpawnTimer = 0;
+    if (levelInfo.challengeType === CHALLENGE_TYPES.BOSS) {
+      this.bossHP = BOSS_MAX_HP;
+      this.bossMaxHP = BOSS_MAX_HP;
+      this.bossSpawnTimer = BOSS_SPAWN_INTERVAL; // spawn first enemy immediately
+    }
+
+    // Challenge room — hole open from start (red = flee), trickle-spawn enemies
+    this.challengeFleeMode = false;
+    this.challengeSpawnTimer = 0;
+    if (levelInfo.challengeType === CHALLENGE_TYPES.CHALLENGE) {
+      this.challengeFleeMode = true;
+      this.challengeComplete = true; // hole exists from start
+      this.exitHole = {
+        x: this.level.exitHoleX,
+        y: this.level.exitHoleY,
+        radius: EXIT_HOLE_RADIUS,
+      };
+    }
+
+    // Power Up — generators in each cardinal room
+    this.generators = [];
+    if (levelInfo.challengeType === CHALLENGE_TYPES.POWER_UP) {
+      for (let i = 0; i < this.level.rooms.length; i++) {
+        if (i === this.level.startRoomIndex) continue;
+        const room = this.level.rooms[i];
+        this.generators.push({
+          roomIndex: i,
+          x: room.floorX + room.floorWidth / 2,
+          y: room.floorY + room.floorHeight / 2,
+          radius: 16,
+          completed: false,
+        });
+      }
+    }
+
+    // Spawn enemies dynamically (skip for coffee break / challenge / boss)
+    const skipSpawn = levelInfo.challengeType === CHALLENGE_TYPES.COFFEE_BREAK
+                   || levelInfo.challengeType === CHALLENGE_TYPES.CHALLENGE
+                   || levelInfo.challengeType === CHALLENGE_TYPES.BOSS;
+    if (skipSpawn) {
+      this.enemies = [];
+    } else {
+      this.enemies = spawnEnemies(this.level, this.levelManager.levelDepth, {
+        playerStart: { x: this.level.playerStartX, y: this.level.playerStartY },
+        keyPosition: this.keyItem ? { x: this.keyItem.x, y: this.keyItem.y } : null,
+        generators: this.generators,
+      });
+    }
   }
 
-  exit() {}
+  /**
+   * Start the falling transition into the exit hole.
+   */
+  _startTransition() {
+    // Fire achievement checks before transitioning
+    achievements.onLevelComplete({
+      challengeType: this.levelManager.challengeType,
+      allEnemiesKilled: this.enemies.every(e => !e.active),
+      enemiesKilledThisFloor: this.enemiesKilledThisFloor,
+      levelDepth: this.levelManager.levelDepth,
+    });
+
+    this.transition = {
+      phase: 'falling',
+      timer: 0,
+      startX: this.player.x,
+      startY: this.player.y,
+      holeX: this.exitHole.x,
+      holeY: this.exitHole.y,
+    };
+  }
 
   update(dt) {
+    // ── Always-update systems (even during hitstop and transitions) ──
+    this.screenFlash.update(dt);
+    this.particles.update(dt);
+
+    // ── Transition animation (overrides normal gameplay) ───────────────
+    if (this.transition) {
+      this._updateTransition(dt);
+      return;
+    }
+
     if (input.isActionJustPressed('pause')) {
       this.game.pushScene(new PauseScene(this.game));
       return;
@@ -82,12 +257,39 @@ class GameplayScene {
 
     this.frameCount++;
 
+    // ── Hitstop: skip entity updates while frozen ──
+    const frozen = this.hitstop.update(dt);
+    if (frozen) return;
+
+    // ── Level timer countdown (paused during QTE, disabled for coffee break) ──
+    if (!this.qteActive && this.timerActive) {
+      this.levelTimer -= dt;
+      if (this.levelTimer <= 0) {
+        this.levelTimer = 0;
+        if (!this.gameOverPushed) {
+          this.player.dead = true;
+          this.gameOverPushed = true;
+          this.game.pushScene(new GameOverScene(this.game, {
+            levelDepth: this.levelManager.levelDepth,
+            enemiesKilled: this.enemiesKilled,
+            runLength: (performance.now() - this.runStartTime) / 1000,
+          }));
+        }
+        return;
+      }
+    }
+
     this.player.update(dt, this.walls);
     this.bullets.update(dt, this.walls);
 
+    // Emit wall dust for bullet-wall collisions
+    for (const hit of this.bullets.wallHits) {
+      emitWallDust(this.particles, hit.x, hit.y, hit.nx, hit.ny);
+    }
+
     // Update enemies
     for (const enemy of this.enemies) {
-      enemy.update(dt, this.walls, this.player);
+      enemy.update(dt, this.walls, this.player, this.bullets);
     }
 
     // ── Player-enemy QTE collision (AABB vs AABB, checked FIRST) ──────
@@ -106,6 +308,19 @@ class GameplayScene {
       }
     }
 
+    // ── Player-generator collision (Power Up) ───────────────────────
+    if (!this.player.dead && !this.qteActive && this.generators.length > 0) {
+      for (const gen of this.generators) {
+        if (gen.completed) continue;
+        const dx = this.player.x - gen.x;
+        const dy = this.player.y - gen.y;
+        if (dx * dx + dy * dy < (this.player.wallRadius + gen.radius) ** 2) {
+          this._triggerGeneratorQTE(gen);
+          return;
+        }
+      }
+    }
+
     // ── Bullet-player collision (circle vs circle) ────────────────────
     if (!this.player.dead && !this.player.invulnerable) {
       for (let i = 0; i < this.bullets.pool.length; i++) {
@@ -121,6 +336,10 @@ class GameplayScene {
           b.active = false;
           if (this.player.damage()) {
             this.bulletDamageFrame = this.frameCount;
+            this.hitstop.freeze(5);
+            this.screenFlash.flash('#ff0000', 0.08);
+            this.camera.shake(0.4);
+            this.player.squash(0.3, 0.15);
           }
         }
       }
@@ -137,7 +356,12 @@ class GameplayScene {
         );
 
         if (result.hit) {
-          this.player.damage();
+          if (this.player.damage()) {
+            this.hitstop.freeze(5);
+            this.screenFlash.flash('#ff0000', 0.08);
+            this.camera.shake(0.4);
+            this.player.squash(0.3, 0.15);
+          }
           break; // only one damage per frame
         }
       }
@@ -145,11 +369,252 @@ class GameplayScene {
 
     this.camera.update(dt, this.player, input.getMousePos());
 
-    // Check for game over after player update (guard against re-push)
+    // ── Challenge room: trickle-spawn enemies + flee→safe transition ──
+    if (this.challengeFleeMode || this.levelManager.challengeType === CHALLENGE_TYPES.CHALLENGE) {
+      // Spawn a new bat at a random floor position on interval
+      if (this.challengeFleeMode) {
+        this.challengeSpawnTimer += dt;
+        if (this.challengeSpawnTimer >= CHALLENGE_SPAWN_INTERVAL) {
+          this.challengeSpawnTimer -= CHALLENGE_SPAWN_INTERVAL;
+          this._spawnChallengeEnemy();
+        }
+      }
+
+      // Transition from flee (red) to safe (green) in last N seconds
+      if (this.challengeFleeMode && this.levelTimer <= CHALLENGE_SAFE_TIME) {
+        this.challengeFleeMode = false;
+        // Juice: hole turns green
+        const hx = this.exitHole.x;
+        const hy = this.exitHole.y;
+        this.camera.shake(0.35);
+        this.screenFlash.flash('#44ff88', 0.1);
+        this.particles.addBlastWave(hx, hy, 60, 0.3, '#44ff88');
+        this.particles.emit(hx, hy, {
+          vx: 0, vy: 0, vxRandom: 140, vyRandom: 140,
+          life: 0.4, lifeRandom: 0.15,
+          size: 4, sizeRandom: 2, endSize: 0,
+          color: '#44ff88', endColor: '#ffffff',
+          friction: 0.9, gravity: 40,
+        }, 12);
+      }
+    }
+
+    // ── Boss: continuous enemy spawning ────────────────────────────────
+    if (this.levelManager.challengeType === CHALLENGE_TYPES.BOSS && this.bossHP > 0) {
+      this.bossSpawnTimer += dt;
+      if (this.bossSpawnTimer >= BOSS_SPAWN_INTERVAL) {
+        this.bossSpawnTimer -= BOSS_SPAWN_INTERVAL;
+        this._spawnChallengeEnemy();
+      }
+    }
+
+    // ── Challenge completion check ────────────────────────────────────
+    if (!this.challengeComplete) {
+      const type = this.levelManager.challengeType;
+
+      if (type === CHALLENGE_TYPES.FIND_THE_KEY) {
+        // Pick up key
+        if (this.keyItem && !this.keyItem.collected) {
+          const dx = this.player.x - this.keyItem.x;
+          const dy = this.player.y - this.keyItem.y;
+          if (dx * dx + dy * dy < (this.player.wallRadius + this.keyItem.radius) ** 2) {
+            this.keyItem.collected = true;
+            this.hasKey = true;
+          }
+        }
+        // Player enters starting room with key → key starts homing to hole
+        if (this.hasKey && this.keyItem && !this.keyItem.homing
+            && this._isPlayerInRoom(this.level.startRoomIndex)) {
+          this.keyItem.homing = true;
+          this.keyItem.homingSpeed = 0;
+        }
+      } else if (type !== CHALLENGE_TYPES.BOSS && type !== CHALLENGE_TYPES.POWER_UP) {
+        // Default: kill all enemies (boss/power-up completion handled via QTE callbacks)
+        if (this.enemies.every(e => !e.active)) {
+          this.challengeComplete = true;
+          const hx = this.level.exitHoleX;
+          const hy = this.level.exitHoleY;
+          this.exitHole = { x: hx, y: hy, radius: EXIT_HOLE_RADIUS };
+          // Juice: hole opens
+          this.camera.shake(0.4);
+          this.screenFlash.flash('#44ff88', 0.12);
+          this.particles.addBlastWave(hx, hy, 70, 0.35, '#44ff88');
+          this.particles.emit(hx, hy, {
+            vx: 0, vy: 0, vxRandom: 160, vyRandom: 160,
+            life: 0.5, lifeRandom: 0.2,
+            size: 5, sizeRandom: 3, endSize: 0,
+            color: '#44ff88', endColor: '#ffffff',
+            friction: 0.9, gravity: 50,
+          }, 15);
+        }
+      }
+    }
+
+    // ── Player-exit hole collision ────────────────────────────────────
+    if (this.exitHole && !this.player.dead) {
+      const dx = this.player.x - this.exitHole.x;
+      const dy = this.player.y - this.exitHole.y;
+      const distSq = dx * dx + dy * dy;
+      const threshold = this.exitHole.radius + this.player.wallRadius;
+      if (distSq < threshold * threshold) {
+        // Fleeing a challenge room costs a life
+        if (this.challengeFleeMode) {
+          this.player.damage();
+        }
+        this._startTransition();
+        return;
+      }
+    }
+
+    // Update key follow / homing
+    if (this.keyItem && this.keyItem.collected) {
+      if (this.keyItem.homing) {
+        // Accelerate toward exit hole position
+        const tx = this.level.exitHoleX;
+        const ty = this.level.exitHoleY;
+        const dx = tx - this.keyItem.x;
+        const dy = ty - this.keyItem.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < KEY_ARRIVAL_DIST) {
+          // Key arrived — open the hole, remove key
+          const hx = this.level.exitHoleX;
+          const hy = this.level.exitHoleY;
+          this.challengeComplete = true;
+          this.exitHole = { x: hx, y: hy, radius: EXIT_HOLE_RADIUS };
+          this.keyItem = null;
+
+          // Juice: shake + flash + particles + blast wave
+          this.camera.shake(0.5);
+          this.screenFlash.flash('#44ff88', 0.15);
+          this.particles.addBlastWave(hx, hy, 80, 0.4, '#44ff88');
+          this.particles.emit(hx, hy, {
+            vx: 0, vy: 0, vxRandom: 200, vyRandom: 200,
+            life: 0.5, lifeRandom: 0.2,
+            size: 5, sizeRandom: 3, endSize: 0,
+            color: '#44ff88', endColor: '#ffffff',
+            friction: 0.9, gravity: 60,
+          }, 20);
+        } else {
+          this.keyItem.homingSpeed += KEY_HOMING_ACCEL * dt;
+          const step = Math.min(this.keyItem.homingSpeed * dt, dist);
+          this.keyItem.x += (dx / dist) * step;
+          this.keyItem.y += (dy / dist) * step;
+        }
+      } else {
+        // Lazy trail behind player
+        this.keyItem.x += (this.player.x - this.keyItem.x) * KEY_FOLLOW_SPEED * dt;
+        this.keyItem.y += (this.player.y - this.keyItem.y) * KEY_FOLLOW_SPEED * dt;
+      }
+    }
+
+    // Update HUD
+    this.hud.update(dt, {
+      lives: this.player.lives,
+      timer: this.levelTimer,
+      levelDepth: this.levelManager.levelDepth,
+      challengeType: this.challengeDisplayName,
+      timerActive: this.timerActive,
+      bossHP: this.bossHP,
+      bossMaxHP: this.bossMaxHP,
+      generatorsDone: this.generators.filter(g => g.completed).length,
+      generatorsTotal: this.generators.length,
+    });
+
+    // Check for game over after player update
     if (this.player.dead && !this.gameOverPushed) {
       this.gameOverPushed = true;
-      this.game.pushScene(new GameOverScene(this.game));
+      this.game.pushScene(new GameOverScene(this.game, {
+        levelDepth: this.levelManager.levelDepth,
+        enemiesKilled: this.enemiesKilled,
+        runLength: (performance.now() - this.runStartTime) / 1000,
+      }));
     }
+  }
+
+  // ── Transition logic ──────────────────────────────────────────────────
+
+  _updateTransition(dt) {
+    this.transition.timer += dt;
+
+    switch (this.transition.phase) {
+      case 'falling':
+        if (this.transition.timer >= FALL_DURATION) {
+          // Rebuild level for next floor
+          this._initLevel();
+          // Switch to splash phase
+          this.transition.phase = 'splash';
+          this.transition.timer = 0;
+          // Update HUD immediately with new depth/timer
+          this.hud.update(0, {
+            lives: this.player.lives,
+            timer: this.levelTimer,
+            levelDepth: this.levelManager.levelDepth,
+            challengeType: this.challengeDisplayName,
+            timerActive: this.timerActive,
+            bossHP: this.bossHP,
+            bossMaxHP: this.bossMaxHP,
+            generatorsDone: this.generators.filter(g => g.completed).length,
+            generatorsTotal: this.generators.length,
+          });
+        }
+        break;
+
+      case 'splash':
+        if (this.transition.timer >= SPLASH_DURATION) {
+          this.transition.phase = 'landing';
+          this.transition.timer = 0;
+        }
+        break;
+
+      case 'landing':
+        if (this.transition.timer >= LAND_DURATION) {
+          // Impact — squash + camera shake + particles + blast wave
+          this.transition.phase = 'squash';
+          this.transition.timer = 0;
+          this.camera.shake(0.6);
+          this.particles.addBlastWave(this.player.x, this.player.y, 50, 0.3);
+          this.particles.emit(this.player.x, this.player.y, {
+            vx: 0, vy: 0, vxRandom: 120, vyRandom: 60,
+            life: 0.35, lifeRandom: 0.1,
+            size: 3, sizeRandom: 2, endSize: 0,
+            color: '#aaaaaa', endColor: '#666666',
+            friction: 0.85, gravity: 80,
+          }, 10);
+        }
+        // Fall through to tick shake
+        this.camera._updateShake(dt);
+        break;
+
+      case 'squash':
+        this.camera._updateShake(dt);
+        if (this.transition.timer >= SQUASH_DURATION) {
+          this.transition = null; // done — resume gameplay
+        }
+        break;
+    }
+  }
+
+  /**
+   * Check if player center is within a room's floor rect.
+   */
+  _isPlayerInRoom(roomIndex) {
+    const room = this.level.rooms[roomIndex];
+    const { x, y } = this.player;
+    return x >= room.floorX && x <= room.floorX + room.floorWidth
+        && y >= room.floorY && y <= room.floorY + room.floorHeight;
+  }
+
+  /**
+   * Spawn a random enemy at a random floor position for Challenge/Boss trickle waves.
+   */
+  _spawnChallengeEnemy() {
+    const enemy = spawnChallengeEnemy(
+      this.level.rooms[0],
+      this.enemies,
+      { playerPos: { x: this.player.x, y: this.player.y }, levelDepth: this.levelManager.levelDepth },
+    );
+    this.enemies.push(enemy);
   }
 
   /**
@@ -193,11 +658,22 @@ class GameplayScene {
         const blastX = e.x;
         const blastY = e.y;
 
+        // Juice: hitstop, screen flash, shake, death burst, blast wave, zoom punch, kick
+        this.hitstop.freeze(8);
+        this.screenFlash.flash('#ffffff', 0.1);
+        this.camera.shake(0.7);
+        emitDeathBurst(this.particles, blastX, blastY, e.color || '#ff0000');
+        this.particles.addBlastWave(blastX, blastY, BLAST_RADIUS * 0.6, 0.4, '#ffffff');
+        this.camera.zoomPunch(0.15);
+        this.camera.kick(blastX, blastY, 25);
+
         // Kill the QTE target
         e.takeDamage();
+        this.enemiesKilled++;
+        this.enemiesKilledThisFloor++;
 
         // Destroy bullets in blast radius
-        const bulletsDestroyed = this.bullets.destroyInRadius(blastX, blastY, BLAST_RADIUS);
+        this.bullets.destroyInRadius(blastX, blastY, BLAST_RADIUS);
 
         // Knockback nearby enemies
         for (const other of this.enemies) {
@@ -209,15 +685,60 @@ class GameplayScene {
           }
         }
 
-        // Award score
-        const earned = QTE_SUCCESS_SCORE + bulletsDestroyed * BULLET_CANCEL_SCORE;
-        this.score += earned;
+        // Heart: grant extra life (capped at 5)
+        if (e.enemyType === 'heart') {
+          this.player.addLife();
+        }
+
+        // Clock: grant +5 seconds to level timer
+        if (e.enemyType === 'clock') {
+          this.levelTimer += 5;
+        }
+
+        // Boss: decrement HP, open exit when defeated
+        if (this.levelManager.challengeType === CHALLENGE_TYPES.BOSS && this.bossHP > 0) {
+          this.bossHP--;
+          if (this.bossHP <= 0) {
+            this.challengeComplete = true;
+            const hx = this.level.exitHoleX;
+            const hy = this.level.exitHoleY;
+            this.exitHole = { x: hx, y: hy, radius: EXIT_HOLE_RADIUS };
+            achievements.onBossDefeated();
+            // Juice: boss defeated hole opens
+            this.camera.shake(0.6);
+            this.screenFlash.flash('#44ff88', 0.15);
+            this.particles.addBlastWave(hx, hy, 90, 0.45, '#44ff88');
+            this.particles.emit(hx, hy, {
+              vx: 0, vy: 0, vxRandom: 200, vyRandom: 200,
+              life: 0.6, lifeRandom: 0.2,
+              size: 6, sizeRandom: 3, endSize: 0,
+              color: '#44ff88', endColor: '#ffffff',
+              friction: 0.9, gravity: 50,
+            }, 20);
+          }
+        }
 
         this.qteActive = false;
       },
       onFail: (e) => {
+        // Juice: hitstop, screen flash red, shake, zoom punch
+        this.hitstop.freeze(6);
+        this.screenFlash.flash('#ff0000', 0.15);
+        this.camera.shake(0.5);
+        this.camera.zoomPunch(0.05);
+
         // Player takes damage (loses life + becomes invulnerable for 1s)
         this.player.damage();
+
+        // Player knockback away from enemy
+        const dx = this.player.x - e.x;
+        const dy = this.player.y - e.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        this.player.x += (dx / dist) * 40;
+        this.player.y += (dy / dist) * 40;
+
+        // Player squash on damage
+        this.player.squash(0.3, 0.15);
 
         // Enemy retreats away from player
         e.applyKnockback(this.player.x, this.player.y, RETREAT_KNOCKBACK_FORCE);
@@ -226,6 +747,62 @@ class GameplayScene {
       },
     }));
   }
+
+  /**
+   * Push a TapQTE for a generator (Power Up challenge).
+   */
+  _triggerGeneratorQTE(generator) {
+    this.qteActive = true;
+    const genProxy = {
+      color: '#ffaa00',
+      enemyType: 'generator',
+      qteType: 'tap',
+    };
+
+    this.game.pushScene(new QTEScene(this.game, {
+      enemy: genProxy,
+      onSuccess: () => {
+        generator.completed = true;
+
+        // Juice: shake + flash + particles + blast wave on generator activation
+        this.camera.shake(0.4);
+        this.screenFlash.flash('#ffaa00', 0.12);
+        this.particles.addBlastWave(generator.x, generator.y, 60, 0.35, '#ffaa00');
+        this.particles.emit(generator.x, generator.y, {
+          vx: 0, vy: 0, vxRandom: 180, vyRandom: 180,
+          life: 0.45, lifeRandom: 0.15,
+          size: 5, sizeRandom: 3, endSize: 0,
+          color: '#ffaa00', endColor: '#ffffff',
+          friction: 0.9, gravity: 50,
+        }, 15);
+
+        if (this.generators.every(g => g.completed)) {
+          this.challengeComplete = true;
+          const hx = this.level.exitHoleX;
+          const hy = this.level.exitHoleY;
+          this.exitHole = { x: hx, y: hy, radius: EXIT_HOLE_RADIUS };
+          // Juice: all generators done, hole opens
+          this.camera.shake(0.5);
+          this.screenFlash.flash('#44ff88', 0.15);
+          this.particles.addBlastWave(hx, hy, 80, 0.4, '#44ff88');
+          this.particles.emit(hx, hy, {
+            vx: 0, vy: 0, vxRandom: 180, vyRandom: 180,
+            life: 0.5, lifeRandom: 0.2,
+            size: 5, sizeRandom: 3, endSize: 0,
+            color: '#44ff88', endColor: '#ffffff',
+            friction: 0.9, gravity: 50,
+          }, 18);
+        }
+        this.qteActive = false;
+      },
+      onFail: () => {
+        this.player.damage();
+        this.qteActive = false;
+      },
+    }));
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────────
 
   render(ctx) {
     // Clear canvas background (screen-space, before camera transform)
@@ -238,6 +815,21 @@ class GameplayScene {
     // Draw level (rooms + hallways)
     this.level.render(ctx);
 
+    // Draw exit hole (on floor, before entities)
+    if (this.exitHole) {
+      this._renderExitHole(ctx);
+    }
+
+    // Draw key item (on floor before entities, follows player when collected)
+    if (this.keyItem) {
+      this._renderKeyItem(ctx);
+    }
+
+    // Draw generators (on floor before entities)
+    for (const gen of this.generators) {
+      this._renderGenerator(ctx, gen);
+    }
+
     // Draw enemies
     for (const enemy of this.enemies) {
       if (enemy.active) enemy.render(ctx);
@@ -246,20 +838,149 @@ class GameplayScene {
     // Draw bullets
     this.bullets.render(ctx);
 
-    // Draw player
-    this.player.render(ctx);
+    // Draw upper particles (blast waves, death bursts) — world-space
+    this.particles.render(ctx);
+
+    // Draw player (with transition effects if active)
+    if (this.transition) {
+      this._renderTransitionPlayer(ctx);
+    } else {
+      this.player.render(ctx);
+    }
 
     this.camera.removeTransform(ctx);
 
     // --- Screen-space rendering (HUD, unaffected by camera) ---
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '14px monospace';
+    this.hud.render(ctx);
+
+    // Screen flash overlay (after HUD)
+    this.screenFlash.render(ctx);
+
+    // Splash overlay (covers everything during splash phase)
+    if (this.transition && this.transition.phase === 'splash') {
+      this._renderSplash(ctx);
+    }
+  }
+
+  _renderSplash(ctx) {
+    const cx = CANVAS_WIDTH / 2;
+    const cy = CANVAS_HEIGHT / 2;
+
+    // Full-screen dark background
+    ctx.fillStyle = '#0e0e1a';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
     ctx.textAlign = 'center';
-    ctx.fillText('WASD = Move | Esc = Pause | Walk into enemy = QTE', CANVAS_WIDTH / 2, CANVAS_HEIGHT - 12);
+    ctx.textBaseline = 'middle';
+
+    // Floor depth
+    ctx.fillStyle = '#888888';
+    ctx.font = '12px "Press Start 2P"';
+    ctx.fillText(`FLOOR ${this.levelManager.levelDepth}`, cx, cy - 20);
+
+    // Challenge name
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '22px "Press Start 2P"';
+    ctx.fillText(this.challengeDisplayName, cx, cy + 20);
+  }
+
+  _renderKeyItem(ctx) {
+    const { x, y, radius } = this.keyItem;
+    ctx.fillStyle = '#ffdd44';
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.strokeStyle = '#aa8800';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x - radius, y - radius, radius * 2, radius * 2);
+  }
+
+  _renderGenerator(ctx, gen) {
+    const { x, y, radius } = gen;
+
+    if (gen.completed) {
+      ctx.fillStyle = '#44ff88';
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    } else {
+      ctx.fillStyle = '#ffaa00';
+      ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+
+      const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = pulse;
+      ctx.strokeRect(x - radius, y - radius, radius * 2, radius * 2);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _renderExitHole(ctx) {
+    const { x, y, radius } = this.exitHole;
+
+    // Dark hole fill
+    ctx.fillStyle = EXIT_HOLE_COLOR;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Pulsing border — red during challenge flee mode, green otherwise
+    const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
+    ctx.strokeStyle = this.challengeFleeMode ? EXIT_HOLE_FLEE_COLOR : EXIT_HOLE_BORDER_COLOR;
+    ctx.lineWidth = EXIT_HOLE_BORDER_WIDTH;
+    ctx.globalAlpha = pulse;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  _renderTransitionPlayer(ctx) {
+    const tr = this.transition;
+    const { width, height, color } = this.player;
+    let drawX, drawY, scaleX, scaleY;
+
+    switch (tr.phase) {
+      case 'falling': {
+        const t = Math.min(tr.timer / FALL_DURATION, 1);
+        const eased = t * t; // ease-in: accelerates downward
+        drawX = _lerp(tr.startX, tr.holeX, eased);
+        drawY = _lerp(tr.startY, tr.holeY, eased);
+        const s = 1 - eased * 0.85; // shrink toward 0.15
+        scaleX = s;
+        scaleY = s;
+        break;
+      }
+      case 'landing': {
+        const t = Math.min(tr.timer / LAND_DURATION, 1);
+        const eased = t * t; // ease-in: accelerates downward, harsh stop
+        drawX = this.player.x;
+        drawY = this.player.y - LAND_DROP_HEIGHT * (1 - eased);
+        scaleX = _lerp(0.6, 1, eased);
+        scaleY = _lerp(0.6, 1, eased);
+        break;
+      }
+      case 'squash': {
+        const t = Math.min(tr.timer / SQUASH_DURATION, 1);
+        drawX = this.player.x;
+        drawY = this.player.y;
+        scaleX = _lerp(1.4, 1, t);
+        scaleY = _lerp(0.6, 1, t);
+        break;
+      }
+      default:
+        return;
+    }
+
+    const w = width * scaleX;
+    const h = height * scaleY;
+    ctx.fillStyle = color;
+    ctx.fillRect(drawX - w / 2, drawY - h / 2, w, h);
   }
 
   onInput(event) {
   }
+}
+
+function _lerp(a, b, t) {
+  return a + (b - a) * t;
 }
 
 export { GameplayScene };

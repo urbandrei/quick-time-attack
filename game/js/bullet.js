@@ -61,17 +61,27 @@ export class Bullet extends Entity {
     }
   }
 
-  /** Check wall collision. Returns true if bullet hit a wall and was deactivated. */
+  /**
+   * Check wall collision. Returns wall-hit info or null.
+   * Deactivates bullet on hit.
+   */
   checkWalls(walls) {
-    if (!this.active) return false;
+    if (!this.active) return null;
     for (const wall of walls) {
       const result = checkCircleVsAABB(this.x, this.y, this.radius, wall);
       if (result.overlaps) {
         this.active = false;
-        return true;
+        // Compute normal: direction from wall center to bullet
+        const wcx = wall.x + wall.w / 2;
+        const wcy = wall.y + wall.h / 2;
+        let nx = this.x - wcx;
+        let ny = this.y - wcy;
+        const len = Math.sqrt(nx * nx + ny * ny);
+        if (len > 0) { nx /= len; ny /= len; } else { nx = 0; ny = -1; }
+        return { x: this.x, y: this.y, nx, ny };
       }
     }
-    return false;
+    return null;
   }
 
   /** Start the soft-cap fade-out. */
@@ -86,9 +96,24 @@ export class Bullet extends Entity {
     ctx.save();
     ctx.globalAlpha = this.alpha;
     ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fill();
+
+    // Stretch along velocity direction
+    const speed = Math.sqrt(this.vx * this.vx + this.vy * this.vy);
+    if (speed > 1) {
+      const angle = Math.atan2(this.vy, this.vx);
+      ctx.translate(this.x, this.y);
+      ctx.rotate(angle);
+      ctx.scale(1.5, 0.7); // elongate along velocity, compress perpendicular
+      ctx.beginPath();
+      ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Stationary bullets stay circular
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
     ctx.restore();
   }
 }
@@ -96,6 +121,7 @@ export class Bullet extends Entity {
 export class BulletPool {
   constructor(initialSize = 256) {
     this.pool = [];
+    this.wallHits = [];
     for (let i = 0; i < initialSize; i++) {
       this.pool.push(new Bullet());
     }
@@ -125,6 +151,7 @@ export class BulletPool {
   /** Update all active bullets. Check wall collision and enforce soft cap. */
   update(dt, walls) {
     const active = [];
+    this.wallHits = [];
 
     for (let i = 0; i < this.pool.length; i++) {
       const b = this.pool[i];
@@ -133,8 +160,11 @@ export class BulletPool {
       b.update(dt);
       if (!b.active) continue;
 
-      b.checkWalls(walls);
-      if (!b.active) continue;
+      const hit = b.checkWalls(walls);
+      if (hit) {
+        this.wallHits.push(hit);
+        continue;
+      }
 
       active.push(b);
     }

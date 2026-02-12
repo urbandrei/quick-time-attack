@@ -1,6 +1,7 @@
 import { Game, CANVAS_WIDTH, CANVAS_HEIGHT } from './game.js';
-import { GameplayScene } from './scenes/gameplayScene.js';
+import { MainMenuScene } from './scenes/mainMenuScene.js';
 import { input } from './input.js';
+import { achievements } from './systems/achievements.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -9,7 +10,7 @@ const MAX_DT = 1 / 30;
 
 // --- Game instance ---
 const game = new Game();
-game.pushScene(new GameplayScene(game));
+game.pushScene(new MainMenuScene(game));
 
 // --- Input setup ---
 input.init(canvas);
@@ -40,6 +41,9 @@ function loop(timestamp) {
   ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   game.update(dt);
   game.render(ctx);
+
+  achievements.update(dt);
+  achievements.render(ctx);
 
   input.endFrame();
 }

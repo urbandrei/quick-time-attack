@@ -22,12 +22,13 @@ export class Enemy extends Entity {
    * @param {number}  opts.y
    * @param {string} [opts.enemyType='bat'] - Enemy type id (bat, gopher, etc.)
    */
-  constructor({ x = 0, y = 0, enemyType = 'bat' } = {}) {
+  constructor({ x = 0, y = 0, enemyType = 'bat', difficulty = 1.0 } = {}) {
     const color = ENEMY_COLORS[enemyType] || '#ff0000';
     super({ x, y, width: 32, height: 32, color });
 
     this.enemyType = enemyType;
     this.qteType = enemyType; // QTE mini-game type maps 1:1 with enemy type
+    this.difficulty = difficulty;
 
     // State machine (string-based, subclasses add their own states)
     this.state = 'idle';
@@ -70,10 +71,19 @@ export class Enemy extends Entity {
   }
 
   /**
+   * Whether this enemy is currently telegraphing an attack.
+   * Subclasses override to return true during their anticipation state.
+   */
+  get isAnticipating() {
+    return false;
+  }
+
+  /**
    * Called when the enemy is killed (e.g., QTE success on this enemy).
    * Deactivates the entity.
    */
   takeDamage() {
+    this.squash(0.4, 0.2);
     this.active = false;
   }
 
@@ -109,6 +119,7 @@ export class Enemy extends Entity {
 
     this.knockbackVx = dirX * force;
     this.knockbackVy = dirY * force;
+    this.squash(0.3, 0.15);
     this.resetToIdle();
   }
 
@@ -141,16 +152,37 @@ export class Enemy extends Entity {
    * @param {{x:number,y:number,w:number,h:number}[]} walls - Wall segments for collision
    * @param {import('../player.js').Player} [player] - Player reference for targeting
    */
-  update(dt, walls, player) {
+  update(dt, walls, player, bullets) {
     if (!this.active) return;
 
     this.stateTimer += dt;
     this._updateKnockback(dt);
+    this._updateScale(dt);
 
     // Subclasses implement movement before calling super.update() or after.
     // Wall collision ensures enemy stays inside room boundaries.
     if (walls) {
       resolveWallCollision(this, walls);
     }
+  }
+
+  // ── Render ─────────────────────────────────────────────────────────
+
+  /**
+   * Render anticipation white pulse overlay. Call from subclass render()
+   * with the actual drawn dimensions if using a custom render.
+   */
+  _renderAnticipation(ctx, w, h) {
+    if (!this.isAnticipating) return;
+    const pulse = 0.3 + 0.2 * Math.sin(performance.now() / 80);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
+    ctx.globalAlpha = 1;
+  }
+
+  render(ctx) {
+    super.render(ctx);
+    this._renderAnticipation(ctx, this.width * this.scaleX, this.height * this.scaleY);
   }
 }

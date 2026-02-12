@@ -13,10 +13,10 @@ const DIR_CHANGE_MAX    = 1.2;
 const LUNGE_RADIUS      = 12;    // collision radius during lunge
 
 export class Bat extends Enemy {
-  constructor({ x = 0, y = 0 } = {}) {
-    super({ x, y, enemyType: 'bat' });
+  constructor({ x = 0, y = 0, difficulty = 1.0 } = {}) {
+    super({ x, y, enemyType: 'bat', difficulty });
 
-    this.speed = BAT_SPEED;
+    this.speed = BAT_SPEED * this.difficulty;
     this.lungeRadius = LUNGE_RADIUS;
 
     // Flutter direction
@@ -46,6 +46,10 @@ export class Bat extends Enemy {
     return this.state === 'lunge';
   }
 
+  get isAnticipating() {
+    return this.state === 'windup';
+  }
+
   // ── State hooks ───────────────────────────────────────────────────────
 
   onStateEnter(state) {
@@ -65,10 +69,11 @@ export class Bat extends Enemy {
     this.setState('flutter');
   }
 
-  update(dt, walls, player) {
+  update(dt, walls, player, bullets) {
     if (!this.active) return;
     this.stateTimer += dt;
     this._updateKnockback(dt);
+    this._updateScale(dt);
 
     switch (this.state) {
       case 'flutter': this._flutter(dt, walls); break;
@@ -162,6 +167,7 @@ export class Bat extends Enemy {
 
       ctx.fillStyle = this.color;
       ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
+      this._renderAnticipation(ctx, w, h);
     } else {
       super.render(ctx);
     }
