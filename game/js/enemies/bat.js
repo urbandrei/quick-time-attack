@@ -177,6 +177,7 @@ export class Bat extends Enemy {
   // ── Color helpers ─────────────────────────────────────────────────────
 
   _getDrawColor() {
+    if (this._flashTimer > 0) return '#ffffff';
     switch (this.state) {
       case 'lunge':
         return DANGER_COLOR;

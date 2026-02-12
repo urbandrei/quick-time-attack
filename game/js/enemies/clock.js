@@ -73,7 +73,7 @@ export class Clock extends Enemy {
   render(ctx) {
     // Gentle bob effect
     const bob = Math.sin(this.stateTimer * 3) * 2;
-    ctx.fillStyle = this.color;
+    ctx.fillStyle = this._getColor();
     ctx.fillRect(
       this.x - this.width / 2,
       this.y - this.height / 2 + bob,

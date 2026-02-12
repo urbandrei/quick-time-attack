@@ -117,7 +117,7 @@ export class SpinningTop extends Enemy {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(wobble);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this._getColor();
         ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
         ctx.restore();
         this._renderAnticipation(ctx, this.width, this.height);
@@ -132,7 +132,7 @@ export class SpinningTop extends Enemy {
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(angle);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this._getColor();
         ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
         ctx.restore();
         break;
@@ -145,15 +145,22 @@ export class SpinningTop extends Enemy {
         const scaleY = 1 - 0.4 * (1 - t); // 0.6 → 1
         const w = this.width * scaleX;
         const h = this.height * scaleY;
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this._getColor();
         ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
         break;
       }
 
-      default:
-        // idle — render normally
-        super.render(ctx);
+      default: {
+        // idle — render with gentle tilt wobble
+        const wobble = Math.sin(this.stateTimer * 3) * 0.06;
+        ctx.save();
+        ctx.translate(this.x, this.y);
+        ctx.rotate(wobble);
+        ctx.fillStyle = this._getColor();
+        ctx.fillRect(-this.width / 2, -this.height / 2, this.width, this.height);
+        ctx.restore();
         break;
+      }
     }
   }
 }

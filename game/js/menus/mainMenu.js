@@ -20,11 +20,11 @@ export const MENU_PLAYER_START = {
   y: 150,
 };
 
-// Interactable objects around the hole
+// Interactable objects — bottom row
 export const MENU_OBJECTS = [
-  { id: 'settings',     x: 620, y: 150, size: 40, color: '#6688cc', label: 'SETTINGS' },
-  { id: 'achievements', x: 180, y: 150, size: 40, color: '#ccaa44', label: 'TROPHIES' },
-  { id: 'leaderboard',  x: 400, y: 490, size: 40, color: '#aa44cc', label: 'SCORES' },
+  { id: 'achievements', x: 180, y: 530, size: 40, color: '#ccaa44', label: 'TROPHIES' },
+  { id: 'leaderboard',  x: 400, y: 530, size: 40, color: '#aa44cc', label: 'SCORES' },
+  { id: 'settings',     x: 620, y: 530, size: 40, color: '#6688cc', label: 'SETTINGS' },
 ];
 
 export const INTERACTION_RADIUS = 40;

@@ -14,9 +14,10 @@ import { spawnEnemies, spawnChallengeEnemy } from '../levels/enemySpawner.js';
 import { achievements } from '../systems/achievements.js';
 import { HitstopManager } from '../systems/hitstop.js';
 import { ScreenFlash } from '../systems/screenFlash.js';
-import { ParticlePool, emitDeathBurst, emitWallDust } from '../systems/particles.js';
+import { ParticlePool, emitDeathBurst, emitWallDust, emitCorpseLinger } from '../systems/particles.js';
 import { Vignette } from '../systems/vignette.js';
 import { audio } from '../systems/audio.js';
+import { tutorials } from '../systems/tutorials.js';
 
 // Number of frames within which a bullet hit is nullified by a QTE trigger
 const QTE_PRIORITY_FRAMES = 3;
@@ -221,6 +222,38 @@ class GameplayScene {
         generators: this.generators,
       });
     }
+
+    // Permanence marks (cleared each level)
+    this.wallMarks = [];
+    this.corpseMarks = [];
+
+    // Ambient particles
+    this._ambientTimer = 0;
+    this._ambientInterval = 0.5 + Math.random() * 0.5;
+
+    // Floor tutorial text
+    const tutorialLines = tutorials.getLines(this.levelManager.challengeType);
+    if (tutorialLines.length > 0) {
+      this.tutorialType = this.levelManager.challengeType;
+      if (this.levelManager.challengeType === CHALLENGE_TYPES.CHALLENGE) {
+        // Position below the hole for challenge rooms
+        this.floorText = {
+          lines: tutorialLines,
+          x: this.level.exitHoleX,
+          y: this.level.exitHoleY + 55,
+        };
+      } else {
+        const startRoom = this.level.rooms[this.level.startRoomIndex];
+        this.floorText = {
+          lines: tutorialLines,
+          x: startRoom.floorX + startRoom.floorWidth / 2,
+          y: this.level.playerStartY + 50,
+        };
+      }
+    } else {
+      this.floorText = null;
+      this.tutorialType = null;
+    }
   }
 
   /**
@@ -255,6 +288,38 @@ class GameplayScene {
       isQTEActive: this.qteActive,
     });
     this.particles.update(dt);
+
+    // Fade permanence marks
+    if (this.wallMarks) {
+      for (let i = this.wallMarks.length - 1; i >= 0; i--) {
+        this.wallMarks[i].alpha -= dt / 5;
+        if (this.wallMarks[i].alpha <= 0) this.wallMarks.splice(i, 1);
+      }
+    }
+    if (this.corpseMarks) {
+      for (let i = this.corpseMarks.length - 1; i >= 0; i--) {
+        this.corpseMarks[i].alpha -= dt / 15;
+        if (this.corpseMarks[i].alpha <= 0) this.corpseMarks.splice(i, 1);
+      }
+    }
+
+    // Ambient particles (skip during transitions)
+    if (!this.transition && this.player) {
+      this._ambientTimer += dt;
+      if (this._ambientTimer >= this._ambientInterval) {
+        this._ambientTimer -= this._ambientInterval;
+        this._ambientInterval = 0.5 + Math.random() * 0.5;
+        const ax = this.player.x + (Math.random() - 0.5) * 600;
+        const ay = this.player.y + (Math.random() - 0.5) * 600;
+        this.particles.emit(ax, ay, {
+          vxRandom: 15, vyRandom: 10,
+          life: 4, lifeRandom: 1,
+          size: 1.5, sizeRandom: 0.5, endSize: 0,
+          color: '#555566', endColor: '#333344',
+          friction: 0.99, gravity: 0,
+        }, 1);
+      }
+    }
 
     // Update audio listener to player position
     if (this.player) {
@@ -393,9 +458,14 @@ class GameplayScene {
 
     this.bullets.update(dt, this.walls);
 
-    // Emit wall dust for bullet-wall collisions
+    // Emit wall dust for bullet-wall collisions + spawn wall marks
     for (const hit of this.bullets.wallHits) {
       emitWallDust(this.particles, hit.x, hit.y, hit.nx, hit.ny);
+      this.wallMarks.push({
+        x: hit.x, y: hit.y,
+        radius: 3 + Math.random() * 2,
+        alpha: 0.5,
+      });
     }
 
     // Update enemies
@@ -785,10 +855,28 @@ class GameplayScene {
         this.screenFlash.flash('#ffffff', 0.1);
         this.camera.shake(0.7);
         emitDeathBurst(this.particles, blastX, blastY, e.color || '#ff0000');
+        emitCorpseLinger(this.particles, blastX, blastY, e.color || '#ff0000');
         this.particles.addBlastWave(blastX, blastY, BLAST_RADIUS * 0.6, 0.4, '#ffffff');
         this.camera.zoomPunch(0.15);
         this.camera.kick(blastX, blastY, 25);
         audio.playSFX('qteSuccess', blastX, blastY);
+
+        // Corpse mark — colored debris on floor
+        const offsets = [];
+        const numDebris = 3 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < numDebris; i++) {
+          offsets.push({
+            dx: (Math.random() - 0.5) * 16,
+            dy: (Math.random() - 0.5) * 16,
+            size: 3 + Math.random() * 2,
+          });
+        }
+        this.corpseMarks.push({
+          x: blastX, y: blastY,
+          color: e.color || '#ff0000',
+          alpha: 0.6,
+          offsets,
+        });
 
         // Kill the QTE target
         e.takeDamage();
@@ -947,17 +1035,32 @@ class GameplayScene {
     // Draw exit hole (on floor, before entities)
     if (this.exitHole) {
       this._renderExitHole(ctx);
+      if (this.tutorialType === CHALLENGE_TYPES.CHALLENGE) {
+        this._renderChallengeArrow(ctx);
+      }
     }
 
     // Draw key item (on floor before entities, follows player when collected)
     if (this.keyItem) {
       this._renderKeyItem(ctx);
+      if (this.tutorialType === CHALLENGE_TYPES.FIND_THE_KEY && !this.keyItem.collected) {
+        this._renderKeyArrow(ctx);
+      }
     }
 
     // Draw generators (on floor before entities)
     for (const gen of this.generators) {
       this._renderGenerator(ctx, gen);
+      if (this.tutorialType === CHALLENGE_TYPES.POWER_UP && !gen.completed) {
+        this._renderGeneratorLabel(ctx, gen);
+      }
     }
+
+    // Draw floor marks (wall marks, scorch marks, corpse marks)
+    this._renderFloorMarks(ctx);
+
+    // Draw floor tutorial text
+    if (this.floorText) this._renderFloorText(ctx);
 
     // Draw enemies
     for (const enemy of this.enemies) {
@@ -1042,6 +1145,133 @@ class GameplayScene {
       ctx.strokeRect(x - radius, y - radius, radius * 2, radius * 2);
       ctx.globalAlpha = 1;
     }
+  }
+
+  _renderFloorMarks(ctx) {
+    // Wall marks — dark gray circles
+    if (this.wallMarks) {
+      for (const mark of this.wallMarks) {
+        ctx.globalAlpha = mark.alpha;
+        ctx.fillStyle = '#111118';
+        ctx.beginPath();
+        ctx.arc(mark.x, mark.y, mark.radius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // Corpse marks — colored debris squares
+    if (this.corpseMarks) {
+      for (const mark of this.corpseMarks) {
+        ctx.globalAlpha = mark.alpha;
+        ctx.fillStyle = mark.color;
+        for (const off of mark.offsets) {
+          ctx.fillRect(
+            mark.x + off.dx - off.size / 2,
+            mark.y + off.dy - off.size / 2,
+            off.size, off.size,
+          );
+        }
+      }
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  _renderFloorText(ctx) {
+    const { lines, x, y } = this.floorText;
+    ctx.font = '10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === '') continue; // blank separator — skip but keep spacing
+      const ly = y + i * 18;
+
+      // Shadow
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = '#000000';
+      ctx.fillText(lines[i], x + 1, ly + 1);
+
+      // Text
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#8899bb';
+      ctx.fillText(lines[i], x, ly);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  _renderChallengeArrow(ctx) {
+    const { x, y } = this.exitHole;
+    const isRed = this.challengeFleeMode;
+    const color = isRed ? '#ff4444' : '#44ff88';
+    const label = isRed ? 'WAIT TO ENTER' : 'ENTER NOW';
+
+    // Arrow triangle pointing down at hole
+    const arrowY = y - 46;
+    const arrowSize = 8;
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x - arrowSize, arrowY);
+    ctx.lineTo(x + arrowSize, arrowY);
+    ctx.lineTo(x, arrowY + arrowSize);
+    ctx.closePath();
+    ctx.fill();
+
+    // Label above arrow
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText(label, x, arrowY - 6);
+    ctx.globalAlpha = 1;
+  }
+
+  _renderKeyArrow(ctx) {
+    const { x, y } = this.keyItem;
+
+    // Arrow triangle pointing down at key
+    const arrowY = y - 24;
+    const arrowSize = 8;
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#ffdd44';
+    ctx.beginPath();
+    ctx.moveTo(x - arrowSize, arrowY);
+    ctx.lineTo(x + arrowSize, arrowY);
+    ctx.lineTo(x, arrowY + arrowSize);
+    ctx.closePath();
+    ctx.fill();
+
+    // Labels above arrow
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('PICK UP THE KEY', x, arrowY - 20);
+    ctx.fillText('BRING IT BACK', x, arrowY - 6);
+    ctx.globalAlpha = 1;
+  }
+
+  _renderGeneratorLabel(ctx, gen) {
+    const { x, y } = gen;
+
+    // Arrow triangle pointing down at generator
+    const arrowY = y - 28;
+    const arrowSize = 6;
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = '#ffaa00';
+    ctx.beginPath();
+    ctx.moveTo(x - arrowSize, arrowY);
+    ctx.lineTo(x + arrowSize, arrowY);
+    ctx.lineTo(x, arrowY + arrowSize);
+    ctx.closePath();
+    ctx.fill();
+
+    // Label above arrow
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('RUN INTO IT', x, arrowY - 6);
+    ctx.globalAlpha = 1;
   }
 
   _renderExitHole(ctx) {

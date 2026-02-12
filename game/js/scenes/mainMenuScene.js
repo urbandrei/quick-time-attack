@@ -6,6 +6,7 @@ import { Camera } from '../camera.js';
 import { ParticlePool } from '../systems/particles.js';
 import { ScreenFlash } from '../systems/screenFlash.js';
 import { audio } from '../systems/audio.js';
+import { tutorials } from '../systems/tutorials.js';
 import {
   MENU_ROOM,
   MENU_HOLE,
@@ -63,6 +64,19 @@ export class MainMenuScene {
 
     this.nearestObject = null;
     this.transition = { phase: 'landing', timer: 0 };
+
+    // Floor tutorial text (intro controls, shown once ever)
+    // Positioned between the hole and the bottom menu objects
+    const introLines = tutorials.getIntroLines();
+    if (introLines.length > 0) {
+      this.floorText = {
+        lines: introLines,
+        x: MENU_HOLE.x,
+        y: MENU_HOLE.y + 70,
+      };
+    } else {
+      this.floorText = null;
+    }
   }
 
   exit() {}
@@ -210,6 +224,12 @@ export class MainMenuScene {
     // Hole
     this._renderHole(ctx);
 
+    // Portal arrow label (always visible, above hole)
+    this._renderPortalArrow(ctx);
+
+    // Floor tutorial text
+    if (this.floorText) this._renderFloorText(ctx);
+
     // Interactable objects
     for (const obj of MENU_OBJECTS) {
       this._renderObject(ctx, obj);
@@ -251,6 +271,54 @@ export class MainMenuScene {
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  _renderPortalArrow(ctx) {
+    const hx = MENU_HOLE.x;
+    const hy = MENU_HOLE.y;
+
+    // Downward arrow triangle pointing at the hole
+    const arrowY = hy - 46;
+    const arrowSize = 8;
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = '#44ff88';
+    ctx.beginPath();
+    ctx.moveTo(hx - arrowSize, arrowY);
+    ctx.lineTo(hx + arrowSize, arrowY);
+    ctx.lineTo(hx, arrowY + arrowSize);
+    ctx.closePath();
+    ctx.fill();
+
+    // Label above arrow
+    ctx.font = '8px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.fillText('RUN INTO PORTAL TO START', hx, arrowY - 6);
+    ctx.globalAlpha = 1;
+  }
+
+  _renderFloorText(ctx) {
+    const { lines, x, y } = this.floorText;
+    ctx.font = '10px "Press Start 2P"';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i] === '') continue;
+      const ly = y + i * 18;
+
+      // Shadow
+      ctx.globalAlpha = 0.6;
+      ctx.fillStyle = '#000000';
+      ctx.fillText(lines[i], x + 1, ly + 1);
+
+      // Text
+      ctx.globalAlpha = 0.7;
+      ctx.fillStyle = '#8899bb';
+      ctx.fillText(lines[i], x, ly);
+    }
+
     ctx.globalAlpha = 1;
   }
 

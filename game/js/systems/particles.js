@@ -197,3 +197,20 @@ export function emitWallDust(pool, x, y, nx, ny) {
     color: '#aaaaaa', friction: 0.9,
   }, 4);
 }
+
+/**
+ * Lingering corpse particles — slow secondary burst after enemy death.
+ * @param {ParticlePool} pool
+ * @param {number} x
+ * @param {number} y
+ * @param {string} color - Enemy color
+ */
+export function emitCorpseLinger(pool, x, y, color) {
+  pool.emit(x, y, {
+    vx: 0, vy: 0, vxRandom: 20, vyRandom: 20,
+    life: 3, lifeRandom: 1,
+    size: 3, sizeRandom: 2, endSize: 0,
+    color: color, endColor: '#222222',
+    friction: 0.95, gravity: 15,
+  }, 8);
+}

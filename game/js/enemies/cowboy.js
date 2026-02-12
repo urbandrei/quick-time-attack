@@ -169,7 +169,7 @@ export class Cowboy extends Enemy {
         const w = this.width * pulse;
         const h = this.height * pulse;
 
-        ctx.fillStyle = '#a07850';
+        ctx.fillStyle = this._flashTimer > 0 ? '#ffffff' : '#a07850';
         ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
 
         // Warning border
@@ -181,9 +181,15 @@ export class Cowboy extends Enemy {
         break;
       }
 
-      default:
-        super.render(ctx);
+      default: {
+        // running / cooldown — render with side-to-side sway
+        const sway = Math.sin(this.stateTimer * 6) * 2;
+        const w = this.width * this.scaleX;
+        const h = this.height * this.scaleY;
+        ctx.fillStyle = this._getColor();
+        ctx.fillRect(this.x - w / 2 + sway, this.y - h / 2, w, h);
         break;
+      }
     }
   }
 }

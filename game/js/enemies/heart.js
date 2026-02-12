@@ -81,7 +81,7 @@ export class Heart extends Enemy {
     const w = this.width * pulse;
     const h = this.height * pulse;
 
-    ctx.fillStyle = this.color;
+    ctx.fillStyle = this._getColor();
     ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
   }
 }

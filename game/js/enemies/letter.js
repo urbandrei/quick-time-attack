@@ -122,8 +122,13 @@ export class Letter extends Enemy {
   render(ctx) {
     switch (this.state) {
       case 'aiming': {
-        // Normal square + aim line toward player
-        super.render(ctx);
+        // Normal square with float bob + aim line toward player
+        const bob = Math.sin(this.stateTimer * 2.5) * 3;
+        const w = this.width * this.scaleX;
+        const h = this.height * this.scaleY;
+        ctx.fillStyle = this._getColor();
+        ctx.fillRect(this.x - w / 2, this.y - h / 2 + bob, w, h);
+        this._renderAnticipation(ctx, w, h);
 
         // Telegraph line
         const dx = this.targetX - this.x;
@@ -156,17 +161,22 @@ export class Letter extends Enemy {
         const w = this.width * scale;
         const h = this.height * scale;
 
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this._getColor();
         ctx.globalAlpha = 0.5 + 0.5 * t; // fade in from 0.5 → 1.0
         ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
         ctx.globalAlpha = 1;
         break;
       }
 
-      default:
-        // firing / waiting — render normally
-        super.render(ctx);
+      default: {
+        // firing / waiting — render with float bob
+        const bob = Math.sin(this.stateTimer * 2.5) * 3;
+        const w = this.width * this.scaleX;
+        const h = this.height * this.scaleY;
+        ctx.fillStyle = this._getColor();
+        ctx.fillRect(this.x - w / 2, this.y - h / 2 + bob, w, h);
         break;
+      }
     }
   }
 }

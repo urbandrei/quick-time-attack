@@ -124,6 +124,7 @@ export class Enemy extends Entity {
     this.knockbackVx = dirX * force;
     this.knockbackVy = dirY * force;
     this.squash(0.3, 0.15);
+    this.flashWhite(3);
     this.resetToIdle();
   }
 

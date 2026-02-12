@@ -13,6 +13,9 @@ export class Entity {
     this.scaleX = 1;
     this.scaleY = 1;
     this._scaleTween = null; // { timer, duration, startX, startY }
+
+    // White flash on damage
+    this._flashTimer = 0;
   }
 
   /**
@@ -38,10 +41,27 @@ export class Entity {
   }
 
   /**
+   * Flash the entity white for a number of frames.
+   * @param {number} frames - Number of frames to stay white
+   */
+  flashWhite(frames = 3) {
+    this._flashTimer = frames;
+  }
+
+  /**
+   * Get the current display color — white during flash, otherwise this.color.
+   */
+  _getColor() {
+    return this._flashTimer > 0 ? '#ffffff' : this.color;
+  }
+
+  /**
    * Tick the self-contained scale tween, lerping scaleX/scaleY back to 1.0.
    * Call from subclass update() methods.
    */
   _updateScale(dt) {
+    if (this._flashTimer > 0) this._flashTimer--;
+
     if (!this._scaleTween) return;
 
     this._scaleTween.timer += dt;
@@ -63,7 +83,7 @@ export class Entity {
   render(ctx) {
     const w = this.width * this.scaleX;
     const h = this.height * this.scaleY;
-    ctx.fillStyle = this.color;
+    ctx.fillStyle = this._getColor();
     ctx.fillRect(this.x - w / 2, this.y - h / 2, w, h);
   }
 }

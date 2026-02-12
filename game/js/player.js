@@ -51,6 +51,7 @@ export class Player extends Entity {
     if (this.invulnerable || this.dead) return false;
 
     this.lives--;
+    this.flashWhite(3);
     if (this.lives <= 0) {
       this.lives = 0;
       this.dead = true;

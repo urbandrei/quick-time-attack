@@ -144,7 +144,7 @@ export class Gopher extends Enemy {
         const t = Math.min(this.stateTimer / EMERGE_DURATION, 1);
         const w = this.width;
         const h = this.height * t;
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this._getColor();
         ctx.fillRect(this.x - w / 2, this.y + this.height / 2 - h, w, h);
         this._renderAnticipation(ctx, w, h);
         break;
@@ -155,15 +155,21 @@ export class Gopher extends Enemy {
         const t = Math.min(this.stateTimer / BURROW_DURATION, 1);
         const w = this.width;
         const h = this.height * (1 - t);
-        ctx.fillStyle = this.color;
+        ctx.fillStyle = this._getColor();
         ctx.fillRect(this.x - w / 2, this.y + this.height / 2 - h, w, h);
         break;
       }
 
-      default:
-        // fire / idle — render normally
-        super.render(ctx);
+      default: {
+        // fire / idle — render with subtle vertical bob
+        const bob = Math.sin(this.stateTimer * 5) * 1.5;
+        const w = this.width * this.scaleX;
+        const h = this.height * this.scaleY;
+        ctx.fillStyle = this._getColor();
+        ctx.fillRect(this.x - w / 2, this.y - h / 2 + bob, w, h);
+        this._renderAnticipation(ctx, w, h);
         break;
+      }
     }
   }
 
