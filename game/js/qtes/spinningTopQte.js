@@ -13,8 +13,8 @@ const CENTER_X         = CANVAS_WIDTH / 2;
 const CENTER_Y         = CANVAS_HEIGHT / 2;
 
 export class SpinningTopQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = TIME_LIMIT } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
     this.prevAngle = null;

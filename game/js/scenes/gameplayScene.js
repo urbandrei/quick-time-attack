@@ -18,6 +18,12 @@ import { ParticlePool, emitDeathBurst, emitWallDust, emitCorpseLinger } from '..
 import { Vignette } from '../systems/vignette.js';
 import { audio } from '../systems/audio.js';
 import { tutorials } from '../systems/tutorials.js';
+import { crt } from '../systems/crt.js';
+import {
+  getLevelTimeLimit, getChallengeTimeLimit, getChallengeSafeTime,
+  getChallengeSpawnInterval, getChallengeClumpSize,
+  getBossSpawnInterval, getBossClumpSize,
+} from '../systems/difficulty.js';
 
 // Number of frames within which a bullet hit is nullified by a QTE trigger
 const QTE_PRIORITY_FRAMES = 3;
@@ -27,8 +33,8 @@ const BLAST_RADIUS = 240;          // half room width
 const KNOCKBACK_FORCE = 400;       // px/s initial impulse
 const RETREAT_KNOCKBACK_FORCE = 300; // enemy retreat force on QTE failure
 
-// Level timer
-const LEVEL_TIME_LIMIT = 30; // seconds
+// Level timer (base value — overridden by difficulty scaling)
+const LEVEL_TIME_LIMIT = 30; // seconds (fallback)
 
 // Exit hole
 const EXIT_HOLE_RADIUS = 24;
@@ -88,6 +94,7 @@ class GameplayScene {
     if (this._startWithLanding) {
       this.transition = { phase: 'splash', timer: 0 };
       this._startWithLanding = false;
+      this._playSplashVoiceline();
     }
   }
 
@@ -130,8 +137,9 @@ class GameplayScene {
     this.bulletDamageFrame = -Infinity;
     this.qteActive = false;
 
-    // Level timer
-    this.levelTimer = LEVEL_TIME_LIMIT;
+    // Level timer (scaled by difficulty)
+    this.levelTimer = getLevelTimeLimit(this.levelManager.levelDepth);
+    this.levelTimeTotal = this.levelTimer;
 
     // Challenge completion & exit hole
     this.challengeComplete = false;
@@ -183,7 +191,11 @@ class GameplayScene {
     // Challenge room — hole open from start (red = flee), trickle-spawn enemies
     this.challengeFleeMode = false;
     this.challengeSpawnTimer = 0;
+    this.challengeSafeTime = CHALLENGE_SAFE_TIME;
     if (levelInfo.challengeType === CHALLENGE_TYPES.CHALLENGE) {
+      this.levelTimer = getChallengeTimeLimit(this.levelManager.levelDepth);
+      this.levelTimeTotal = this.levelTimer;
+      this.challengeSafeTime = getChallengeSafeTime(this.levelManager.levelDepth);
       this.challengeFleeMode = true;
       this.challengeComplete = true; // hole exists from start
       this.exitHole = {
@@ -269,6 +281,7 @@ class GameplayScene {
     });
 
     audio.playSFX('falling');
+    audio.resetLevelMusic();
 
     this.transition = {
       phase: 'falling',
@@ -278,6 +291,18 @@ class GameplayScene {
       holeX: this.exitHole.x,
       holeY: this.exitHole.y,
     };
+  }
+
+  _playSplashVoiceline() {
+    const map = {
+      BOSS: 'bossfightincoming',
+      CHALLENGE: 'challengeroom',
+      FIND_THE_KEY: 'findthekey',
+      POWER_UP: 'generators',
+      KILL_ALL: 'killthemall',
+    };
+    const name = map[this.levelManager.challengeType];
+    if (name) audio.playVoiceline(name);
   }
 
   update(dt) {
@@ -351,6 +376,8 @@ class GameplayScene {
         this.levelTimer = 0;
         if (!this.gameOverPushed) {
           audio.playSFX('timerExpire');
+          audio.playExplosion();
+          audio.stopGameplayMusic();
           this.player.dead = true;
           this.gameOverPushed = true;
           this.game.pushScene(new GameOverScene(this.game, {
@@ -370,6 +397,11 @@ class GameplayScene {
           audio.playSFX('timerWarning');
         }
       }
+    }
+
+    // Update gameplay music progress (shepard volumes + warning beep)
+    if (this.timerActive) {
+      audio.setLevelProgress(this.levelTimer, this.levelTimeTotal);
     }
 
     this.player.update(dt, this.walls);
@@ -473,6 +505,45 @@ class GameplayScene {
       enemy.update(dt, this.walls, this.player, this.bullets);
     }
 
+    // ── Enemy landing effects (falling animation complete) ────────────
+    for (const enemy of this.enemies) {
+      if (!enemy.justLanded) continue;
+      enemy.justLanded = false;
+
+      // VFX — lighter than player landing (multiple can land at once)
+      this.camera.shake(0.3);
+      this.camera.zoomPunch(0.05);
+      this.particles.addBlastWave(enemy.x, enemy.y, 30, 0.2);
+      this.particles.emit(enemy.x, enemy.y, {
+        vx: 0, vy: 0, vxRandom: 80, vyRandom: 40,
+        life: 0.25, lifeRandom: 0.1,
+        size: 2, sizeRandom: 1.5, endSize: 0,
+        color: '#aaaaaa', endColor: '#666666',
+        friction: 0.85, gravity: 80,
+      }, 6);
+
+      audio.playSFX('landing');
+      audio.playExplosion();
+      enemy.squash(0.3, 0.15);
+
+      // Damage check — player overlaps landing spot
+      if (!this.player.dead && !this.player.invulnerable) {
+        const dx = this.player.x - enemy.x;
+        const dy = this.player.y - enemy.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < enemy.width / 2 + this.player.bulletRadius) {
+          if (this.player.damage()) {
+            this.hitstop.freeze(5);
+            this.screenFlash.flash('#ff0000', 0.08);
+            this.camera.shake(0.4);
+            this.camera.zoomPunch(0.05);
+            this.player.squash(0.3, 0.15);
+            audio.playSFX('playerDamage');
+          }
+        }
+      }
+    }
+
     // ── Player-enemy QTE collision (AABB vs AABB, checked FIRST) ──────
     // QTE takes priority over bullet damage within a 3-frame window.
     if (!this.player.dead && (!this.player.invulnerable || this.player.dashing) && !this.qteActive) {
@@ -531,7 +602,7 @@ class GameplayScene {
     // ── Lunging bat vs player (bat acts as projectile during lunge) ───
     if (!this.player.dead && !this.player.invulnerable) {
       for (const enemy of this.enemies) {
-        if (!enemy.active || !enemy.isLunging) continue;
+        if (!enemy.active || !enemy.isLunging || enemy.falling) continue;
 
         const result = checkCircleCollision(
           enemy.x, enemy.y, enemy.lungeRadius,
@@ -556,17 +627,21 @@ class GameplayScene {
 
     // ── Challenge room: trickle-spawn enemies + flee→safe transition ──
     if (this.challengeFleeMode || this.levelManager.challengeType === CHALLENGE_TYPES.CHALLENGE) {
-      // Spawn a new bat at a random floor position on interval
+      // Spawn enemies at a rate that scales with level depth
       if (this.challengeFleeMode) {
+        const interval = getChallengeSpawnInterval(this.levelManager.levelDepth);
+        const clump = getChallengeClumpSize(this.levelManager.levelDepth);
         this.challengeSpawnTimer += dt;
-        if (this.challengeSpawnTimer >= CHALLENGE_SPAWN_INTERVAL) {
-          this.challengeSpawnTimer -= CHALLENGE_SPAWN_INTERVAL;
-          this._spawnChallengeEnemy();
+        if (this.challengeSpawnTimer >= interval) {
+          this.challengeSpawnTimer -= interval;
+          for (let i = 0; i < clump; i++) {
+            this._spawnChallengeEnemy();
+          }
         }
       }
 
       // Transition from flee (red) to safe (green) in last N seconds
-      if (this.challengeFleeMode && this.levelTimer <= CHALLENGE_SAFE_TIME) {
+      if (this.challengeFleeMode && this.levelTimer <= this.challengeSafeTime) {
         this.challengeFleeMode = false;
         // Juice: hole turns green
         const hx = this.exitHole.x;
@@ -582,15 +657,20 @@ class GameplayScene {
           friction: 0.9, gravity: 40,
         }, 12);
         audio.playSFX('challengeSafe', hx, hy);
+        audio.playAnnouncement();
       }
     }
 
-    // ── Boss: continuous enemy spawning ────────────────────────────────
+    // ── Boss: continuous enemy spawning (scales with level depth) ──────
     if (this.levelManager.challengeType === CHALLENGE_TYPES.BOSS && this.bossHP > 0) {
+      const bossInterval = getBossSpawnInterval(this.levelManager.levelDepth);
+      const bossClump = getBossClumpSize(this.levelManager.levelDepth);
       this.bossSpawnTimer += dt;
-      if (this.bossSpawnTimer >= BOSS_SPAWN_INTERVAL) {
-        this.bossSpawnTimer -= BOSS_SPAWN_INTERVAL;
-        this._spawnChallengeEnemy();
+      if (this.bossSpawnTimer >= bossInterval) {
+        this.bossSpawnTimer -= bossInterval;
+        for (let i = 0; i < bossClump; i++) {
+          this._spawnChallengeEnemy();
+        }
       }
     }
 
@@ -607,6 +687,7 @@ class GameplayScene {
             this.keyItem.collected = true;
             this.hasKey = true;
             audio.playSFX('keyPickup');
+            audio.playVoiceline('key');
           }
         }
         // Player enters starting room with key → key starts homing to hole
@@ -634,6 +715,7 @@ class GameplayScene {
             friction: 0.9, gravity: 50,
           }, 15);
           audio.playSFX('holeOpen', hx, hy);
+          audio.playAnnouncement();
         }
       }
     }
@@ -685,6 +767,7 @@ class GameplayScene {
             friction: 0.9, gravity: 60,
           }, 20);
           audio.playSFX('holeOpen', hx, hy);
+          audio.playAnnouncement();
         } else {
           this.keyItem.homingSpeed += KEY_HOMING_ACCEL * dt;
           const step = Math.min(this.keyItem.homingSpeed * dt, dist);
@@ -714,6 +797,8 @@ class GameplayScene {
     // Check for game over after player update
     if (this.player.dead && !this.gameOverPushed) {
       this.gameOverPushed = true;
+      audio.playExplosion();
+      audio.stopGameplayMusic();
       this.game.pushScene(new GameOverScene(this.game, {
         levelDepth: this.levelManager.levelDepth,
         enemiesKilled: this.enemiesKilled,
@@ -735,6 +820,7 @@ class GameplayScene {
           // Switch to splash phase
           this.transition.phase = 'splash';
           this.transition.timer = 0;
+          this._playSplashVoiceline();
           // Update HUD immediately with new depth/timer
           this.hud.update(0, {
             lives: this.player.lives,
@@ -754,6 +840,12 @@ class GameplayScene {
         if (this.transition.timer >= SPLASH_DURATION) {
           this.transition.phase = 'landing';
           this.transition.timer = 0;
+          // First level: start music fresh; subsequent levels: just unduck
+          if (audio.isGameplayMusicActive) {
+            audio.unduckGameplayMusic();
+          } else {
+            audio.playGameplayMusic();
+          }
         }
         break;
 
@@ -773,6 +865,7 @@ class GameplayScene {
             friction: 0.85, gravity: 80,
           }, 10);
           audio.playSFX('landing');
+          audio.playExplosion();
         }
         // Fall through to tick shake
         this.camera._updateShake(dt);
@@ -806,6 +899,7 @@ class GameplayScene {
       this.enemies,
       { playerPos: { x: this.player.x, y: this.player.y }, levelDepth: this.levelManager.levelDepth },
     );
+    enemy.startFall(0.5);
     this.enemies.push(enemy);
   }
 
@@ -846,6 +940,7 @@ class GameplayScene {
 
     this.game.pushScene(new QTEScene(this.game, {
       enemy,
+      levelDepth: this.levelManager.levelDepth,
       onSuccess: (e) => {
         const blastX = e.x;
         const blastY = e.y;
@@ -860,6 +955,8 @@ class GameplayScene {
         this.camera.zoomPunch(0.15);
         this.camera.kick(blastX, blastY, 25);
         audio.playSFX('qteSuccess', blastX, blastY);
+        audio.playExplosion();
+        { const _v = ['easy', 'epic', 'goodjob', 'nice']; audio.playVoiceline(_v[Math.floor(Math.random() * _v.length)]); }
 
         // Corpse mark — colored debris on floor
         const offsets = [];
@@ -929,6 +1026,7 @@ class GameplayScene {
               friction: 0.9, gravity: 50,
             }, 20);
             audio.playSFX('bossDefeat', hx, hy);
+            audio.playAnnouncement();
           }
         }
 
@@ -941,9 +1039,16 @@ class GameplayScene {
         this.camera.shake(0.5);
         this.camera.zoomPunch(0.05);
         audio.playSFX('qteFail');
+        audio.playExplosion();
 
         // Player takes damage (loses life + becomes invulnerable for 1s)
         this.player.damage();
+
+        // Only play fail voiceline if the player survives; death screen has its own line
+        if (!this.player.dead) {
+          const _v = ['notdownyet', 'oof', 'youokthere', 'goodtry'];
+          audio.playVoiceline(_v[Math.floor(Math.random() * _v.length)]);
+        }
 
         // Player knockback away from enemy
         const dx = this.player.x - e.x;
@@ -976,6 +1081,7 @@ class GameplayScene {
 
     this.game.pushScene(new QTEScene(this.game, {
       enemy: genProxy,
+      levelDepth: this.levelManager.levelDepth,
       onSuccess: () => {
         generator.completed = true;
 
@@ -991,6 +1097,10 @@ class GameplayScene {
           friction: 0.9, gravity: 50,
         }, 15);
         audio.playSFX('generatorOn', generator.x, generator.y);
+        audio.playExplosion();
+        this.hitstop.freeze(6);
+        this.camera.zoomPunch(0.1);
+        { const _v = ['easy', 'epic', 'goodjob', 'nice']; audio.playVoiceline(_v[Math.floor(Math.random() * _v.length)]); }
 
         if (this.generators.every(g => g.completed)) {
           this.challengeComplete = true;
@@ -1009,6 +1119,7 @@ class GameplayScene {
             friction: 0.9, gravity: 50,
           }, 18);
           audio.playSFX('holeOpen', hx, hy);
+          audio.playAnnouncement();
         }
         this.qteActive = false;
       },
@@ -1082,19 +1193,48 @@ class GameplayScene {
 
     this.camera.removeTransform(ctx);
 
-    // --- Screen-space rendering (HUD, unaffected by camera) ---
-    this.hud.render(ctx);
-
-    // Screen flash overlay (after HUD)
+    // Screen flash overlay (full-screen, fine through CRT)
     this.screenFlash.render(ctx);
 
-    // Vignette overlay (after screen flash)
+    // Vignette overlay
     this.vignette.render(ctx);
 
     // Splash overlay (covers everything during splash phase)
     if (this.transition && this.transition.phase === 'splash') {
       this._renderSplash(ctx);
     }
+  }
+
+  /** Screen-space HUD — rendered after CRT with barrel-matching transforms */
+  renderOverlay(ctx) {
+    // Render each HUD group with a transform matching the fisheye curvature
+    // Lives — top-left
+    this._renderHudWithBarrel(ctx, 50, 20, () => this.hud._renderLives(ctx));
+    // Timer — top-center
+    this._renderHudWithBarrel(ctx, CANVAS_WIDTH / 2, 24, () => this.hud._renderTimer(ctx));
+    // Challenge type — top-center below timer
+    this._renderHudWithBarrel(ctx, CANVAS_WIDTH / 2, 44, () => this.hud._renderChallengeType(ctx));
+    // Level depth — top-right
+    this._renderHudWithBarrel(ctx, CANVAS_WIDTH - 40, 24, () => this.hud._renderLevelDepth(ctx));
+    // Boss HP — bottom-center
+    this._renderHudWithBarrel(ctx, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40, () => this.hud._renderBossHP(ctx));
+    // Generators — bottom-center
+    this._renderHudWithBarrel(ctx, CANVAS_WIDTH / 2, CANVAS_HEIGHT - 40, () => this.hud._renderGenerators(ctx));
+  }
+
+  _renderHudWithBarrel(ctx, anchorX, anchorY, renderFn) {
+    const t = crt.hudTransform(anchorX, anchorY);
+    const offsetX = t.x - anchorX;
+    const offsetY = t.y - anchorY;
+
+    ctx.save();
+    ctx.translate(anchorX + offsetX, anchorY + offsetY);
+    ctx.rotate(t.rotation);
+    ctx.translate(-(anchorX + offsetX), -(anchorY + offsetY));
+    // Shift the rendering by the barrel offset
+    ctx.translate(offsetX, offsetY);
+    renderFn();
+    ctx.restore();
   }
 
   _renderSplash(ctx) {

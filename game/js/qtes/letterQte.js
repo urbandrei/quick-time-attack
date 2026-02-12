@@ -3,19 +3,25 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
-const TIME_LIMIT = 2.5; // seconds
-const WORD_LIST  = [
+const TIME_LIMIT = 2.5; // seconds (fallback)
+const SHORT_WORDS = [
   'QUICK', 'BLAST', 'STRIKE', 'FLAME', 'DODGE',
   'SPARK', 'CRASH', 'GHOST', 'LASER', 'PIXEL',
+];
+const LONG_WORDS = [
+  'QUICKFIRE', 'BLASTWAVE', 'TIMESTRIKE', 'FIRESTORM', 'OVERTHROW',
+  'CLOCKWORK', 'NIGHTFALL', 'SUPERNOVA', 'BREAKDOWN', 'GRAVEYARD',
+  'LIGHTNING', 'DEATHTRAP', 'WHIRLWIND', 'POWERSHOT', 'BLACKHOLE',
 ];
 const WRONG_FLASH_DURATION = 0.2; // seconds
 
 export class LetterQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = TIME_LIMIT, levelDepth = 1 } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
-    this.word = WORD_LIST[Math.floor(Math.random() * WORD_LIST.length)];
+    const wordList = levelDepth > 10 ? LONG_WORDS : SHORT_WORDS;
+    this.word = wordList[Math.floor(Math.random() * wordList.length)];
     this.typedIndex = 0;
     this.wrongFlash = 0;
   }

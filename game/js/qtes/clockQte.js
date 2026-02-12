@@ -14,8 +14,8 @@ const HOUR_TOLERANCE = Math.PI / 12;   // ±15° (12 positions, 30° apart)
 const MINUTE_TOLERANCE = Math.PI / 6;  // ±30° (4 positions, 90° apart)
 
 export class ClockQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: 3, enemy });
+  constructor({ enemy = null, timeLimit = 3 } = {}) {
+    super({ timeLimit, enemy });
     this.hideEnemyLabel = true;
 
     // Random target time — 15-minute increments

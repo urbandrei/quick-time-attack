@@ -101,27 +101,30 @@ export const leaderboard = {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
       const data = await res.json();
-      if (!data.entries || !Array.isArray(data.entries)) return;
+
+      // API returns a plain array with PascalCase fields
+      const rawEntries = Array.isArray(data) ? data : (data.entries || []);
+      if (!Array.isArray(rawEntries) || rawEntries.length === 0) return;
 
       // Map remote format to local format
-      const remoteEntries = data.entries.map(e => {
+      const remoteEntries = rawEntries.map(e => {
         let extra = {};
-        try { extra = JSON.parse(e.extra || '{}'); } catch { /* ignore */ }
+        try { extra = JSON.parse(e.Extra || e.extra || '{}'); } catch { /* ignore */ }
         return {
-          nickname: e.username,
-          levelDepth: e.score,
+          nickname: e.Username || e.username || '',
+          levelDepth: e.Score ?? e.score ?? 0,
           enemiesKilled: extra.k || 0,
           runLength: extra.t || 0,
-          timestamp: e.date ? new Date(e.date).getTime() : 0,
-          guid: e.userGuid || '',
-          rank: e.rank,
+          timestamp: e.Date ? new Date(e.Date).getTime() : (e.date ? new Date(e.date).getTime() : 0),
+          guid: e.UserGuid || e.userGuid || '',
+          rank: e.Rank ?? e.rank ?? 0,
         };
       });
 
       // Merge: use remote entries as authoritative, keep local entries that aren't duplicates
-      const remoteGuids = new Set(remoteEntries.map(e => `${e.guid}_${e.levelDepth}`));
+      const remoteKeys = new Set(remoteEntries.map(e => `${e.nickname}_${e.levelDepth}`));
       const uniqueLocal = this.entries.filter(e =>
-        !e.guid || !remoteGuids.has(`${e.guid}_${e.levelDepth}`)
+        !remoteKeys.has(`${e.nickname}_${e.levelDepth}`)
       );
 
       this.entries = [...remoteEntries, ...uniqueLocal];

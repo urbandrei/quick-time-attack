@@ -12,6 +12,7 @@ import { CowboyQTE } from '../qtes/cowboyQte.js';
 import { ControllerQTE } from '../qtes/controllerQte.js';
 import { HeartQTE } from '../qtes/heartQte.js';
 import { ClockQTE } from '../qtes/clockQte.js';
+import { getQTETimeLimit } from '../systems/difficulty.js';
 
 const SPLASH_DURATION = 1.5;
 
@@ -49,9 +50,10 @@ class QTEScene {
    * @param {Function} [opts.onSuccess] - Called when the QTE is completed successfully
    * @param {Function} [opts.onFail]    - Called when the QTE times out / player fails
    */
-  constructor(game, { enemy = null, onSuccess = null, onFail = null } = {}) {
+  constructor(game, { enemy = null, levelDepth = 1, onSuccess = null, onFail = null } = {}) {
     this.game = game;
     this.enemy = enemy;
+    this.levelDepth = levelDepth;
     this.onSuccess = onSuccess;
     this.onFail = onFail;
     this.qte = null;
@@ -66,12 +68,14 @@ class QTEScene {
     this.qte = this._createQTE();
     // Don't init yet — wait for splash to finish
     audio.playSFX('qteStart');
+    audio.enterQTEMode();
   }
 
   exit() {
     if (this.qte) {
       this.qte.cleanup();
     }
+    audio.exitQTEMode();
   }
 
   update(dt) {
@@ -93,6 +97,11 @@ class QTEScene {
     }
 
     this.qte.update(dt);
+
+    // Drive QTE slowdown → speedup progression
+    if (this.qte.timeLimit > 0) {
+      audio.setQTEProgress(this.qte.elapsed / this.qte.timeLimit);
+    }
 
     if (this.qte.completed) {
       if (this.qte.result === 'success') {
@@ -168,46 +177,47 @@ class QTEScene {
    */
   _createQTE() {
     const type = this.enemy?.qteType;
+    const timeLimit = getQTETimeLimit(this.levelDepth);
 
     if (type === 'bat') {
-      return new BatQTE({ enemy: this.enemy });
+      return new BatQTE({ enemy: this.enemy, timeLimit, levelDepth: this.levelDepth });
     }
 
     if (type === 'gopher') {
-      return new GopherQTE({ enemy: this.enemy });
+      return new GopherQTE({ enemy: this.enemy, timeLimit, levelDepth: this.levelDepth });
     }
 
     if (type === 'spinningTop') {
-      return new SpinningTopQTE({ enemy: this.enemy });
+      return new SpinningTopQTE({ enemy: this.enemy, timeLimit });
     }
 
     if (type === 'letter') {
-      return new LetterQTE({ enemy: this.enemy });
+      return new LetterQTE({ enemy: this.enemy, timeLimit, levelDepth: this.levelDepth });
     }
 
     if (type === 'cowboy') {
-      return new CowboyQTE({ enemy: this.enemy });
+      return new CowboyQTE({ enemy: this.enemy, timeLimit });
     }
 
     if (type === 'controller') {
-      return new ControllerQTE({ enemy: this.enemy });
+      return new ControllerQTE({ enemy: this.enemy, timeLimit });
     }
 
     if (type === 'heart') {
-      return new HeartQTE({ enemy: this.enemy });
+      return new HeartQTE({ enemy: this.enemy, timeLimit, levelDepth: this.levelDepth });
     }
 
     if (type === 'clock') {
-      return new ClockQTE({ enemy: this.enemy });
+      return new ClockQTE({ enemy: this.enemy, timeLimit });
     }
 
     if (type === 'tap') {
-      return new TapQTE({ enemy: this.enemy });
+      return new TapQTE({ enemy: this.enemy, timeLimit, levelDepth: this.levelDepth });
     }
 
     // Fallback — base QTE (counts down and fails on timeout)
     return new QTE({
-      timeLimit: 2,
+      timeLimit,
       enemy: this.enemy,
     });
   }

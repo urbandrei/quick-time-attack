@@ -51,10 +51,12 @@ export class LeaderboardScene {
   }
 
   render(ctx) {
-    // Dark overlay
+    // Background fill (goes through CRT)
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  }
 
+  renderOverlay(ctx) {
     const cx = CANVAS_WIDTH / 2;
 
     // Title

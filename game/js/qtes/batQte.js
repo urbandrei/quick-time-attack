@@ -3,20 +3,26 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
 import { audio } from '../systems/audio.js';
 
+import { getBatSizeScale } from '../systems/difficulty.js';
+
 // ── Tuning constants ────────────────────────────────────────────────────
-const TIME_LIMIT    = 3;      // seconds
 const BASE_SPEED    = 200;    // px/s initial
 const RAMP_RATE     = 100;    // px/s gained per second (≈500 at 3s)
 const MARGIN        = 60;     // px padding from canvas edges
-const BAT_SIZE      = 32;     // visual size
-const CLICK_SIZE    = 48;     // click hitbox (generous)
+const BASE_BAT_SIZE = 32;    // visual size (before scaling)
+const BASE_CLICK_SIZE = 48;  // click hitbox (before scaling)
 const JITTER        = Math.PI / 6; // ±30° bounce jitter
 
 export class BatQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = 5, levelDepth = 1 } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
+
+    // Size scales with difficulty: 2x at level 1, 2/3x at level 20+
+    const scale = getBatSizeScale(levelDepth);
+    this.batSize = Math.round(BASE_BAT_SIZE * scale);
+    this.clickSize = Math.round(BASE_CLICK_SIZE * scale);
 
     // Random start position within play area
     this.batX = MARGIN + Math.random() * (CANVAS_WIDTH - 2 * MARGIN);
@@ -70,7 +76,7 @@ export class BatQTE extends QTE {
     // Check click
     if (input.isMouseJustPressed(0)) {
       const mouse = input.getMousePos();
-      const halfHit = CLICK_SIZE / 2;
+      const halfHit = this.clickSize / 2;
       if (
         mouse.x >= this.batX - halfHit && mouse.x <= this.batX + halfHit &&
         mouse.y >= this.batY - halfHit && mouse.y <= this.batY + halfHit
@@ -96,17 +102,17 @@ export class BatQTE extends QTE {
     const wobbleY = Math.cos(this.wobblePhase * 1.3) * 2;
 
     const color = (this.enemy && this.enemy.color) || '#e74c3c';
-    const half = BAT_SIZE / 2;
+    const half = this.batSize / 2;
     const drawX = this.batX + wobbleX - half;
     const drawY = this.batY + wobbleY - half;
 
     ctx.fillStyle = color;
-    ctx.fillRect(drawX, drawY, BAT_SIZE, BAT_SIZE);
+    ctx.fillRect(drawX, drawY, this.batSize, this.batSize);
 
     // Thin border for visibility against dark overlay
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(drawX, drawY, BAT_SIZE, BAT_SIZE);
+    ctx.strokeRect(drawX, drawY, this.batSize, this.batSize);
   }
 }
 

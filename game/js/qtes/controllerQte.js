@@ -90,8 +90,8 @@ const LAYOUT_STRINGS = [
 ];
 
 export class ControllerQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = TIME_LIMIT } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
 

@@ -37,6 +37,13 @@ export class Game {
     }
   }
 
+  /** Screen-space overlay pass — rendered after post-processing (e.g. CRT) */
+  renderOverlay(ctx) {
+    for (const scene of this.scenes) {
+      if (scene.renderOverlay) scene.renderOverlay(ctx);
+    }
+  }
+
   handleInput(event) {
     const current = this.currentScene();
     if (current && current.onInput) current.onInput(event);

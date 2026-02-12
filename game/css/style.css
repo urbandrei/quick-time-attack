@@ -19,4 +19,5 @@ body {
   display: block;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+  border-radius: 1.2%;
 }

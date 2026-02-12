@@ -3,6 +3,7 @@ import { MainMenuScene } from './scenes/mainMenuScene.js';
 import { input } from './input.js';
 import { achievements } from './systems/achievements.js';
 import { audio } from './systems/audio.js';
+import { crt } from './systems/crt.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -51,12 +52,21 @@ function loop(timestamp) {
     dt = MAX_DT;
   }
 
-  ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  // Render everything to offscreen canvas
+  const offCtx = crt.getContext();
+  offCtx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
   game.update(dt);
-  game.render(ctx);
+  game.render(offCtx);
 
   audio.update(dt);
   achievements.update(dt);
+
+  // Apply CRT effect (barrel distortion + scanlines + vignette) to real canvas
+  ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  crt.apply(ctx);
+
+  // Screen-space overlays — rendered after CRT so they bypass distortion
+  game.renderOverlay(ctx);
   achievements.render(ctx);
 
   input.endFrame();

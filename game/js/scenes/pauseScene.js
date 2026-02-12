@@ -18,9 +18,12 @@ class PauseScene {
 
   enter() {
     this.selectedIndex = 0;
+    audio.pauseGameplayMusic();
   }
 
-  exit() {}
+  exit() {
+    audio.unpauseGameplayMusic();
+  }
 
   update(dt) {
     // Escape / pause action → resume
@@ -170,6 +173,7 @@ class PauseScene {
         });
         break;
       case 2: // Main Menu
+        audio.stopGameplayMusic();
         this.game.scenes[0]._returnFromGameplay = true;
         this.game.popScene(); // remove PauseScene
         this.game.popScene(); // remove GameplayScene

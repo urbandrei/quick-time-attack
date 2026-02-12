@@ -9,8 +9,8 @@ const DRAW_DELAY_MAX = 2.5;
 const REACT_WINDOW   = 0.6;  // must click within 0.6s of "DRAW!"
 
 export class CowboyQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = TIME_LIMIT } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
     this.phase = 'waiting'; // 'waiting' | 'draw' | 'resolved'

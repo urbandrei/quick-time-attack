@@ -1,12 +1,11 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { audio } from '../systems/audio.js';
+import { getHeartCount, getHeartScrollSpeed } from '../systems/difficulty.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
-const TIME_LIMIT     = 3.5;   // seconds
-const HEART_COUNT    = 3;
+const TIME_LIMIT     = 3.5;   // seconds (fallback)
 const HEART_SPACING  = 120;   // px between hearts
-const SCROLL_SPEED   = 160;   // px/s — hearts scroll left to right
 const HIT_TOLERANCE  = 36;    // ±px from target line center
 const HEART_SIZE     = 28;    // visual size of each heart marker
 
@@ -17,14 +16,17 @@ const TRACK_LEFT    = 80;
 const TRACK_RIGHT   = CANVAS_WIDTH - 80;
 
 export class HeartQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = TIME_LIMIT, levelDepth = 1 } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
 
+    this.heartCount = getHeartCount(levelDepth);
+    this.scrollSpeed = getHeartScrollSpeed(levelDepth);
+
     // Build hearts — spaced evenly, starting off-screen left
     this.hearts = [];
-    for (let i = 0; i < HEART_COUNT; i++) {
+    for (let i = 0; i < this.heartCount; i++) {
       this.hearts.push({
         // heart[0] is closest to target (arrives first)
         x: TARGET_X - 150 - i * HEART_SPACING,
@@ -42,11 +44,11 @@ export class HeartQTE extends QTE {
 
     // Scroll all hearts to the right
     for (const h of this.hearts) {
-      h.x += SCROLL_SPEED * dt;
+      h.x += this.scrollSpeed * dt;
     }
 
     // Check if the next expected heart has passed the hit zone without being clicked
-    if (this.nextHeart < HEART_COUNT) {
+    if (this.nextHeart < this.heartCount) {
       const h = this.hearts[this.nextHeart];
       if (h.x > TARGET_X + HIT_TOLERANCE && !h.hit) {
         // Missed — fail
@@ -59,7 +61,7 @@ export class HeartQTE extends QTE {
   onInput(event) {
     if (this.completed) return;
     if (event.type !== 'mousedown') return;
-    if (this.nextHeart >= HEART_COUNT) return;
+    if (this.nextHeart >= this.heartCount) return;
 
     const h = this.hearts[this.nextHeart];
     const dist = Math.abs(h.x - TARGET_X);
@@ -70,7 +72,7 @@ export class HeartQTE extends QTE {
       h.hit = true;
       this.nextHeart++;
 
-      if (this.nextHeart >= HEART_COUNT) {
+      if (this.nextHeart >= this.heartCount) {
         this.succeed();
       }
     } else {
@@ -148,6 +150,6 @@ export class HeartQTE extends QTE {
     ctx.fillStyle = '#ff69b4';
     ctx.font = '10px "Press Start 2P"';
     ctx.textAlign = 'center';
-    ctx.fillText(`${hits} / ${HEART_COUNT}`, CANVAS_WIDTH / 2, TRACK_Y + 50);
+    ctx.fillText(`${hits} / ${this.heartCount}`, CANVAS_WIDTH / 2, TRACK_Y + 50);
   }
 }

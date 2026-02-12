@@ -3,6 +3,7 @@ import { resolveWallCollision } from '../collision.js';
 import { audio } from '../systems/audio.js';
 
 const KNOCKBACK_FRICTION = 5; // exponential decay rate
+const ENEMY_DROP_HEIGHT = 300;
 
 // Distinct color per enemy type (colored squares for prototype)
 const ENEMY_COLORS = {
@@ -41,6 +42,23 @@ export class Enemy extends Entity {
 
     // Track anticipation state for SFX
     this._wasAnticipating = false;
+
+    // Falling animation state
+    this.falling = false;
+    this.fallTimer = 0;
+    this.fallDuration = 0;
+    this.justLanded = false;
+  }
+
+  /**
+   * Start a falling-from-above animation.
+   * @param {number} duration - Fall duration in seconds
+   */
+  startFall(duration) {
+    this.falling = true;
+    this.fallTimer = 0;
+    this.fallDuration = duration;
+    audio.playSFX('falling');
   }
 
   // ── State machine ──────────────────────────────────────────────────
@@ -71,7 +89,7 @@ export class Enemy extends Entity {
    * Subclasses override to add restrictions (e.g., Bat cannot be QTE'd mid-lunge).
    */
   get canTriggerQTE() {
-    return this.active && this.state !== 'stunned';
+    return this.active && this.state !== 'stunned' && !this.falling;
   }
 
   /**
@@ -160,6 +178,15 @@ export class Enemy extends Entity {
   update(dt, walls, player, bullets) {
     if (!this.active) return;
 
+    if (this.falling) {
+      this.fallTimer += dt;
+      if (this.fallTimer >= this.fallDuration) {
+        this.falling = false;
+        this.justLanded = true;
+      }
+      return;
+    }
+
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);
@@ -193,7 +220,37 @@ export class Enemy extends Entity {
   }
 
   render(ctx) {
+    if (this.falling) {
+      this._renderFalling(ctx);
+      return;
+    }
     super.render(ctx);
     this._renderAnticipation(ctx, this.width * this.scaleX, this.height * this.scaleY);
+  }
+
+  _renderFalling(ctx) {
+    const t = Math.min(this.fallTimer / this.fallDuration, 1);
+    const eased = t * t; // ease-in — accelerates downward
+
+    // Red indicator at landing spot — grows from 4px to full width
+    const indicatorRadius = 4 + (this.width / 2 - 4) * t;
+    const indicatorAlpha = 0.3 + 0.3 * t;
+    ctx.globalAlpha = indicatorAlpha;
+    ctx.fillStyle = '#ff0000';
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, indicatorRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ff0000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Enemy sprite dropping from above
+    const dropY = this.y - ENEMY_DROP_HEIGHT * (1 - eased);
+    const scale = 0.3 + 0.7 * eased;
+    const w = this.width * scale;
+    const h = this.height * scale;
+    ctx.fillStyle = this.color;
+    ctx.fillRect(this.x - w / 2, dropY - h / 2, w, h);
   }
 }

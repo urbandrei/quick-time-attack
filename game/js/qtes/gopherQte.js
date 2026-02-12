@@ -2,18 +2,17 @@ import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
 import { audio } from '../systems/audio.js';
+import {
+  getGopherWhacks, getGopherPopDuration, getGopherPopInterval, getGopherMaxPops,
+} from '../systems/difficulty.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
-const TIME_LIMIT    = 3;      // seconds
+const TIME_LIMIT    = 3;      // seconds (fallback)
 const HOLE_COLS     = 3;
 const HOLE_ROWS     = 3;
-const HOLE_COUNT    = HOLE_COLS * HOLE_ROWS;
-const TARGET_WHACKS = 4;
 const HOLE_RADIUS   = 28;     // visual
 const CLICK_RADIUS  = 36;     // click hitbox (generous)
 const GOPHER_SIZE   = 24;     // px
-const POP_DURATION  = 0.8;    // how long a gopher stays up
-const POP_INTERVAL  = 0.5;    // time between new pops
 
 // Grid layout
 const GRID_WIDTH  = 300;
@@ -22,11 +21,16 @@ const GRID_X      = (CANVAS_WIDTH - GRID_WIDTH) / 2;
 const GRID_Y      = (CANVAS_HEIGHT - GRID_HEIGHT) / 2 + 20; // offset down slightly
 
 export class GopherQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = TIME_LIMIT, levelDepth = 1 } = {}) {
+    super({ timeLimit, enemy });
 
     this.hideEnemyLabel = true;
     this.whacked = 0;
+    this.targetWhacks = getGopherWhacks(levelDepth);
+    this.popDuration = getGopherPopDuration(levelDepth);
+    this.popInterval = getGopherPopInterval(levelDepth);
+    this.maxPops = getGopherMaxPops(levelDepth);
+    this.totalPops = 0;
     this.popTimer = 0.2; // small delay before first pop
 
     // Build hole positions in a 3×3 grid
@@ -49,11 +53,13 @@ export class GopherQTE extends QTE {
     super.update(dt);
     if (this.completed) return;
 
-    // Pop timer — activate a random hole periodically
+    // Pop timer — activate a random hole periodically (if pops remain)
     this.popTimer -= dt;
     if (this.popTimer <= 0) {
-      this.popTimer = POP_INTERVAL;
-      this._popRandomHole();
+      this.popTimer = this.popInterval;
+      if (this.totalPops < this.maxPops) {
+        this._popRandomHole();
+      }
     }
 
     // Update active holes
@@ -85,7 +91,7 @@ export class GopherQTE extends QTE {
           hole.whackTimer = 0.15;
           this.whacked++;
           audio.playSFX('qteClick');
-          if (this.whacked >= TARGET_WHACKS) {
+          if (this.whacked >= this.targetWhacks) {
             this.succeed();
           }
           break; // only one whack per click
@@ -101,7 +107,8 @@ export class GopherQTE extends QTE {
 
     const hole = inactive[Math.floor(Math.random() * inactive.length)];
     hole.active = true;
-    hole.timer = POP_DURATION;
+    hole.timer = this.popDuration;
+    this.totalPops++;
   }
 
   render(ctx) {
@@ -116,7 +123,7 @@ export class GopherQTE extends QTE {
 
     // Counter
     ctx.font = '10px "Press Start 2P"';
-    ctx.fillText(`${this.whacked} / ${TARGET_WHACKS}`, CANVAS_WIDTH / 2, 90);
+    ctx.fillText(`${this.whacked} / ${this.targetWhacks}`, CANVAS_WIDTH / 2, 90);
 
     // Draw holes
     for (const hole of this.holes) {
@@ -143,7 +150,7 @@ export class GopherQTE extends QTE {
         ctx.globalAlpha = 1;
       } else if (hole.active) {
         // Gopher popping up — draw as a colored square rising from the hole
-        const popT = Math.min(1, (POP_DURATION - hole.timer) / 0.15); // quick rise
+        const popT = Math.min(1, (this.popDuration - hole.timer) / 0.15); // quick rise
         const halfSize = GOPHER_SIZE / 2;
         const yOffset = (1 - popT) * GOPHER_SIZE; // slides up from below
 

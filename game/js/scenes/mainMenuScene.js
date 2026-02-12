@@ -41,6 +41,9 @@ export class MainMenuScene {
       this.nearestObject = null;
       this.transition = { phase: 'landing', timer: 0 };
       audio.playSFX('landing');
+      this._voicelineTimer = 0;
+      this._voicelineInterval = 3;
+      this._voicelineFirst = true;
       return;
     }
 
@@ -77,6 +80,11 @@ export class MainMenuScene {
     } else {
       this.floorText = null;
     }
+
+    // Main menu voiceline timer
+    this._voicelineTimer = 0;
+    this._voicelineInterval = 3;
+    this._voicelineFirst = true;
   }
 
   exit() {}
@@ -91,6 +99,29 @@ export class MainMenuScene {
     // Always-update systems
     this.particles.update(dt);
     this.screenFlash.update(dt);
+
+    // Main menu voiceline timer
+    this._voicelineTimer += dt;
+    if (this._voicelineTimer >= this._voicelineInterval) {
+      this._voicelineTimer = 0;
+      this._voicelineInterval = 30 + Math.random() * 10;
+      if (this._voicelineFirst) {
+        this._voicelineFirst = false;
+        audio.playVoiceline('hello');
+      } else {
+        const choices = ['hello', 'green', 'missmyfamily', 'rickroll'];
+        const weights = [1, 1, 1, 0.3];
+        const total = weights.reduce((a, b) => a + b, 0);
+        let r = Math.random() * total;
+        for (let i = 0; i < choices.length; i++) {
+          r -= weights[i];
+          if (r <= 0) {
+            audio.playVoiceline(choices[i]);
+            break;
+          }
+        }
+      }
+    }
 
     // Player movement + wall collision
     this.player.update(dt, this.walls);
@@ -250,7 +281,7 @@ export class MainMenuScene {
     // Screen flash (screen-space overlay)
     this.screenFlash.render(ctx);
 
-    // Screen-space UI
+    // Screen-space UI (rendered in world pass — center-top distortion is minimal)
     this._renderUI(ctx);
   }
 
@@ -453,7 +484,11 @@ export class MainMenuScene {
     ctx.fillRect(drawX - w / 2, drawY - h / 2, w, h);
   }
 
-  onInput(event) {}
+  onInput(event) {
+    if (event.type === 'keydown' && event.key === 'p') {
+      audio.playVoiceline('rickroll');
+    }
+  }
 }
 
 function _lerp(a, b, t) {

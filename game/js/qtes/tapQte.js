@@ -1,19 +1,17 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { audio } from '../systems/audio.js';
-
-const TAP_TARGET = 15;
-const TAP_TIME_LIMIT = 3;
+import { getGeneratorTapTarget } from '../systems/difficulty.js';
 
 const BAR_W = 300;
 const BAR_H = 30;
 const BAR_Y = CANVAS_HEIGHT / 2 - 20;
 
 export class TapQTE extends QTE {
-  constructor({ enemy = null } = {}) {
-    super({ timeLimit: TAP_TIME_LIMIT, enemy });
+  constructor({ enemy = null, timeLimit = 5, levelDepth = 1 } = {}) {
+    super({ timeLimit, enemy });
     this.taps = 0;
-    this.target = TAP_TARGET;
+    this.target = getGeneratorTapTarget(levelDepth);
     this.hideEnemyLabel = true;
   }
 

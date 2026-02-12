@@ -53,6 +53,7 @@ export class GameOverScene {
 
   enter() {
     this.selectedIndex = 0;
+    audio.playVoiceline('wellfixyouup');
   }
 
   exit() {}
@@ -345,6 +346,7 @@ export class GameOverScene {
         });
         break;
       case 'mainMenu':
+        audio.stopGameplayMusic();
         this.game.scenes[0]._returnFromGameplay = true;
         this.game.popScene(); // remove GameOverScene
         this.game.popScene(); // remove dead GameplayScene
