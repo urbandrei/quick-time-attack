@@ -1,6 +1,7 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT    = 3;      // seconds
@@ -74,6 +75,7 @@ export class BatQTE extends QTE {
         mouse.x >= this.batX - halfHit && mouse.x <= this.batX + halfHit &&
         mouse.y >= this.batY - halfHit && mouse.y <= this.batY + halfHit
       ) {
+        audio.playSFX('qteClick');
         this.succeed();
       }
     }

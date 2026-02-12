@@ -10,7 +10,7 @@ const RUN_MAX            = 3.5;
 const TELEGRAPH_DURATION = 0.6;  // seconds — visual wind-up
 const COOLDOWN_DURATION  = 0.5;  // seconds — pause after firing
 const BULLET_SPEED       = 200;  // px/s
-const BULLET_COLOR       = '#d4a574';
+const BULLET_COLOR       = '#ff4444';
 
 export class Cowboy extends Enemy {
   constructor({ x = 0, y = 0, difficulty = 1.0 } = {}) {

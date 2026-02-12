@@ -1,6 +1,7 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
 import { QTE } from './qte.js';
+import { audio } from '../systems/audio.js';
 
 // ── Layout ─────────────────────────────────────────────────────────────
 const CLOCK_RADIUS = 120;
@@ -50,6 +51,7 @@ export class ClockQTE extends QTE {
     if (event.type !== 'mousedown' || event.button !== 0) return;
 
     if (this.phase === 'hour') {
+      audio.playSFX('qteClick');
       this.lockedHourAngle = this.currentAngle;
       this.phase = 'minute';
     } else if (this.phase === 'minute') {

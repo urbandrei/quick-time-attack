@@ -1,6 +1,7 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT       = 3;              // seconds
@@ -18,6 +19,7 @@ export class SpinningTopQTE extends QTE {
     this.hideEnemyLabel = true;
     this.prevAngle = null;
     this.totalRotation = 0;
+    this._lastSoundRotation = 0;
   }
 
   update(dt) {
@@ -44,6 +46,12 @@ export class SpinningTopQTE extends QTE {
       if (delta < -Math.PI) delta += Math.PI * 2;
 
       this.totalRotation += Math.abs(delta);
+
+      // Click sound every full rotation
+      if (this.totalRotation - this._lastSoundRotation >= Math.PI * 2) {
+        this._lastSoundRotation += Math.PI * 2;
+        audio.playSFX('qteClick');
+      }
 
       if (this.totalRotation >= TARGET_ROTATION) {
         this.succeed();

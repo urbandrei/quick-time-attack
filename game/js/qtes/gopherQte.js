@@ -1,6 +1,7 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT    = 3;      // seconds
@@ -83,6 +84,7 @@ export class GopherQTE extends QTE {
           hole.whacked = true;
           hole.whackTimer = 0.15;
           this.whacked++;
+          audio.playSFX('qteClick');
           if (this.whacked >= TARGET_WHACKS) {
             this.succeed();
           }

@@ -27,6 +27,7 @@ import {
 
 import { achievements } from '../systems/achievements.js';
 import { leaderboard } from '../systems/leaderboard.js';
+import { audio } from '../systems/audio.js';
 
 const RUNS_STORAGE_KEY = 'qta_runs';
 
@@ -69,12 +70,15 @@ export class GameOverScene {
     // Keyboard navigation
     if (input.isActionJustPressed('moveUp')) {
       this._moveToPreviousEnabled();
+      audio.playSFX('menuHover');
     } else if (input.isActionJustPressed('moveDown')) {
       this._moveToNextEnabled();
+      audio.playSFX('menuHover');
     }
 
     // Keyboard select
     if (input.isKeyJustPressed('Enter') || input.isActionJustPressed('interact')) {
+      audio.playSFX('menuSelect');
       this._executeSelected();
     }
 
@@ -101,6 +105,7 @@ export class GameOverScene {
           mouse.x >= hb.x && mouse.x <= hb.x + hb.w &&
           mouse.y >= hb.y && mouse.y <= hb.y + hb.h
         ) {
+          audio.playSFX('menuSelect');
           this._executeItem(i);
           break;
         }

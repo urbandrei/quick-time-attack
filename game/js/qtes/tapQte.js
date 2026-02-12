@@ -1,5 +1,6 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
+import { audio } from '../systems/audio.js';
 
 const TAP_TARGET = 15;
 const TAP_TIME_LIMIT = 3;
@@ -18,6 +19,7 @@ export class TapQTE extends QTE {
 
   onInput(event) {
     if (event.type === 'mousedown' && !this.completed) {
+      audio.playSFX('qteClick');
       this.taps++;
       if (this.taps >= this.target) {
         this.succeed();

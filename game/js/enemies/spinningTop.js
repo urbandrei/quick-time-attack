@@ -10,7 +10,7 @@ const TOPPLE_DURATION  = 1.0;   // fallen over, resting
 const FIRE_INTERVAL    = 0.1;   // one bullet every 0.1s
 const ROTATION_STEP    = Math.PI / 12; // 15° per shot
 const BULLET_SPEED     = 100;   // px/s
-const BULLET_COLOR     = '#ff8800';
+const BULLET_COLOR     = '#ff4444';
 
 export class SpinningTop extends Enemy {
   constructor({ x = 0, y = 0, difficulty = 1.0 } = {}) {

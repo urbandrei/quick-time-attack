@@ -1,11 +1,12 @@
 import { Entity } from '../entity.js';
 import { resolveWallCollision } from '../collision.js';
+import { audio } from '../systems/audio.js';
 
 const KNOCKBACK_FRICTION = 5; // exponential decay rate
 
 // Distinct color per enemy type (colored squares for prototype)
 const ENEMY_COLORS = {
-  bat:         '#e74c3c',
+  bat:         '#8855cc',
   gopher:      '#8b6914',
   spinningTop: '#ff8800',
   letter:      '#2ecc71',
@@ -37,6 +38,9 @@ export class Enemy extends Entity {
     // Knockback velocity (applied by QTE blast)
     this.knockbackVx = 0;
     this.knockbackVy = 0;
+
+    // Track anticipation state for SFX
+    this._wasAnticipating = false;
   }
 
   // ── State machine ──────────────────────────────────────────────────
@@ -158,6 +162,12 @@ export class Enemy extends Entity {
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);
+
+    // Anticipation SFX — play on transition from not-anticipating to anticipating
+    if (this.isAnticipating && !this._wasAnticipating) {
+      audio.playSFX('enemyAnticipation', this.x, this.y);
+    }
+    this._wasAnticipating = this.isAnticipating;
 
     // Subclasses implement movement before calling super.update() or after.
     // Wall collision ensures enemy stays inside room boundaries.

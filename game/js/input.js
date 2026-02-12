@@ -4,6 +4,7 @@ const DEFAULT_ACTION_MAP = {
   moveLeft:  ['KeyA', 'ArrowLeft'],
   moveRight: ['KeyD', 'ArrowRight'],
   interact:  ['KeyE'],
+  dash:      ['ShiftLeft'],
   pause:     ['Escape'],
 };
 

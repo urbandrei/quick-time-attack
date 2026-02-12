@@ -10,6 +10,7 @@ export const ACTIONS = [
   { id: 'moveLeft',  label: 'MOVE LEFT' },
   { id: 'moveRight', label: 'MOVE RIGHT' },
   { id: 'interact',  label: 'INTERACT' },
+  { id: 'dash',      label: 'DASH' },
   { id: 'pause',     label: 'PAUSE' },
 ];
 
@@ -24,20 +25,20 @@ export const BOTTOM_ITEMS = [
 ];
 
 // Total row counts (for navigation math)
-export const BINDING_ROW_COUNT = ACTIONS.length;                     // 6
-export const VOLUME_ROW_START = BINDING_ROW_COUNT;                   // 6
+export const BINDING_ROW_COUNT = ACTIONS.length;                     // 7
+export const VOLUME_ROW_START = BINDING_ROW_COUNT;                   // 7
 export const VOLUME_ROW_COUNT = VOLUME_ROWS.length;                  // 2
-export const BOTTOM_ROW_START = VOLUME_ROW_START + VOLUME_ROW_COUNT; // 8
+export const BOTTOM_ROW_START = VOLUME_ROW_START + VOLUME_ROW_COUNT; // 9
 export const BOTTOM_ROW_COUNT = BOTTOM_ITEMS.length;                 // 2
-export const TOTAL_ROWS = BOTTOM_ROW_START + BOTTOM_ROW_COUNT;       // 10
+export const TOTAL_ROWS = BOTTOM_ROW_START + BOTTOM_ROW_COUNT;       // 11
 
 // Layout positions
 export const TITLE_Y = 45;
 export const BINDINGS_START_Y = 105;
 export const BINDINGS_SPACING = 32;
-export const VOLUME_START_Y = 315;
+export const VOLUME_START_Y = 347;
 export const VOLUME_SPACING = 38;
-export const BOTTOM_START_Y = 430;
+export const BOTTOM_START_Y = 462;
 export const BOTTOM_SPACING = 45;
 
 // Column positions

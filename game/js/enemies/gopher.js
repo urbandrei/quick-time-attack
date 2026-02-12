@@ -9,7 +9,7 @@ const UNDERGROUND_MIN   = 1.5;   // min time underground
 const UNDERGROUND_MAX   = 3.0;   // max time underground
 const BULLET_SPEED      = 120;   // px/s
 const BULLET_COUNT      = 8;
-const BULLET_COLOR      = '#8b6914';
+const BULLET_COLOR      = '#ff4444';
 const SPAWN_MARGIN      = 0.1;   // keep away from room edges (0–1)
 const BURROW_GRACE      = 0.15;  // seconds after burrowing where QTE still works
 

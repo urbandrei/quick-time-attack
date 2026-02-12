@@ -1,5 +1,6 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT     = 3.5;   // seconds
@@ -65,6 +66,7 @@ export class HeartQTE extends QTE {
 
     if (dist <= HIT_TOLERANCE) {
       // Hit!
+      audio.playSFX('qteClick');
       h.hit = true;
       this.nextHeart++;
 

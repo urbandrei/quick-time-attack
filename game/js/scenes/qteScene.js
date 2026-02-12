@@ -1,6 +1,7 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
 import { PauseScene } from './pauseScene.js';
+import { audio } from '../systems/audio.js';
 import { QTE } from '../qtes/qte.js';
 import { BatQTE } from '../qtes/batQte.js';
 import { TapQTE } from '../qtes/tapQte.js';
@@ -64,6 +65,7 @@ class QTEScene {
 
     this.qte = this._createQTE();
     // Don't init yet — wait for splash to finish
+    audio.playSFX('qteStart');
   }
 
   exit() {

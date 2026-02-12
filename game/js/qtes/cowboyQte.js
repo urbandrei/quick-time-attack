@@ -1,5 +1,6 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT     = 3.0;  // seconds overall
@@ -47,6 +48,7 @@ export class CowboyQTE extends QTE {
       this.fail();
     } else if (this.phase === 'draw') {
       // Good draw!
+      audio.playSFX('qteClick');
       this.succeed();
     }
   }

@@ -2,6 +2,7 @@ import { Game, CANVAS_WIDTH, CANVAS_HEIGHT } from './game.js';
 import { MainMenuScene } from './scenes/mainMenuScene.js';
 import { input } from './input.js';
 import { achievements } from './systems/achievements.js';
+import { audio } from './systems/audio.js';
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -14,6 +15,18 @@ game.pushScene(new MainMenuScene(game));
 
 // --- Input setup ---
 input.init(canvas);
+
+// --- Audio setup ---
+audio.init();
+
+// Resume AudioContext on first user interaction (required by browsers)
+const resumeAudio = () => {
+  audio.resume();
+  window.removeEventListener('click', resumeAudio);
+  window.removeEventListener('keydown', resumeAudio);
+};
+window.addEventListener('click', resumeAudio);
+window.addEventListener('keydown', resumeAudio);
 
 // --- Input forwarding ---
 for (const type of ['keydown', 'keyup', 'mousedown', 'mousemove', 'mouseup']) {
@@ -42,6 +55,7 @@ function loop(timestamp) {
   game.update(dt);
   game.render(ctx);
 
+  audio.update(dt);
   achievements.update(dt);
   achievements.render(ctx);
 

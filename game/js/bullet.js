@@ -1,7 +1,8 @@
 import { Entity } from './entity.js';
 import { checkCircleVsAABB } from './collision.js';
+import { audio } from './systems/audio.js';
 
-export const BULLET_RADIUS = 3;
+export const BULLET_RADIUS = 5;
 const SOFT_CAP = 200;
 const FADE_DURATION = 0.3; // seconds for soft-cap fade-out
 
@@ -25,7 +26,7 @@ export class Bullet extends Entity {
     this.y = y;
     this.vx = vx;
     this.vy = vy;
-    this.color = color;
+    this.color = '#ff4444';
     this.radius = radius;
     this.width = radius * 2;
     this.height = radius * 2;
@@ -145,6 +146,7 @@ export class BulletPool {
     }
 
     bullet.init(opts);
+    audio.playSFX('bulletFire', opts.x, opts.y);
     return bullet;
   }
 

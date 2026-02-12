@@ -45,7 +45,7 @@ const THEMED_RATIO = 0.75;
  * Starting room gets fewer enemies.
  */
 function getEnemyCount(levelDepth, isStartRoom) {
-  const extra = Math.floor((levelDepth - 1) / 3);
+  const extra = Math.floor((levelDepth - 1) / 5);
   if (isStartRoom) {
     return Math.min(1 + extra, 4);
   }

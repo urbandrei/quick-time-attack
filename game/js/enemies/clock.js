@@ -7,7 +7,7 @@ const FLOAT_AMPLITUDE_X = 60;     // horizontal range of figure-8
 const FLOAT_AMPLITUDE_Y = 40;     // vertical range of figure-8
 const BULLET_INTERVAL = 0.8;      // seconds between trail bullets
 const BULLET_LIFETIME = 2.5;      // how long trail bullets persist
-const BULLET_COLOR = '#5dade2';    // lighter blue than the clock itself
+const BULLET_COLOR = '#ff4444';
 
 export class Clock extends Enemy {
   constructor({ x = 0, y = 0, difficulty = 1.0 } = {}) {

@@ -5,6 +5,7 @@ import { Player } from '../player.js';
 import { Camera } from '../camera.js';
 import { ParticlePool } from '../systems/particles.js';
 import { ScreenFlash } from '../systems/screenFlash.js';
+import { audio } from '../systems/audio.js';
 import {
   MENU_ROOM,
   MENU_HOLE,
@@ -38,6 +39,7 @@ export class MainMenuScene {
       this._snapCamera();
       this.nearestObject = null;
       this.transition = { phase: 'landing', timer: 0 };
+      audio.playSFX('landing');
       return;
     }
 
@@ -78,6 +80,7 @@ export class MainMenuScene {
 
     // Player movement + wall collision
     this.player.update(dt, this.walls);
+    audio.setListenerPosition(this.player.x, this.player.y);
     this._updateCamera(dt);
 
     // Proximity check for interactable objects
@@ -99,6 +102,7 @@ export class MainMenuScene {
     const holeDist = hdx * hdx + hdy * hdy;
     const holeThreshold = MENU_HOLE.radius + this.player.wallRadius;
     if (holeDist < holeThreshold * holeThreshold) {
+      audio.playSFX('falling');
       this.transition = {
         phase: 'falling',
         timer: 0,
@@ -110,6 +114,7 @@ export class MainMenuScene {
 
     // Interact key — open screen for nearest object
     if (this.nearestObject && input.isActionJustPressed('interact')) {
+      audio.playSFX('menuSelect');
       this._openObjectScene(this.nearestObject);
     }
 
@@ -121,6 +126,7 @@ export class MainMenuScene {
         const half = obj.size / 2;
         if (world.x >= obj.x - half && world.x <= obj.x + half &&
             world.y >= obj.y - half && world.y <= obj.y + half) {
+          audio.playSFX('menuSelect');
           this._openObjectScene(obj);
           break;
         }
@@ -135,8 +141,8 @@ export class MainMenuScene {
 
     switch (this.transition.phase) {
       case 'falling':
-        if (this.transition.timer >= FALL_DURATION) {
-          this.transition = null;
+        if (this.transition.timer >= FALL_DURATION && !this.transition.done) {
+          this.transition.done = true;
           import('./gameplayScene.js').then(({ GameplayScene }) => {
             this.game.pushScene(new GameplayScene(this.game, { startWithLanding: true }));
           });

@@ -1,5 +1,6 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
+import { audio } from '../systems/audio.js';
 import {
   VOLUME_STORAGE_KEY,
   DEFAULT_VOLUMES,
@@ -400,6 +401,8 @@ export class SettingsScene {
         input.resetToDefaults();
         this.volumes = { ...DEFAULT_VOLUMES };
         this._saveVolumes();
+        audio.setSFXVolume(this.volumes.sfx);
+        audio.setMusicVolume(this.volumes.music);
         break;
       case 'back':
         this.game.popScene();
@@ -498,6 +501,10 @@ export class SettingsScene {
     const t = Math.max(0, Math.min(1, (mouse.x - bar.x) / bar.w));
     this.volumes[row.id] = Math.round(t * 10) / 10;
     this._saveVolumes();
+
+    // Live update audio manager
+    audio.setSFXVolume(this.volumes.sfx);
+    audio.setMusicVolume(this.volumes.music);
   }
 
   _hitTest(mouse, rect) {

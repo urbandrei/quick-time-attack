@@ -5,7 +5,7 @@ import { resolveWallCollision } from '../collision.js';
 const SHOT_INTERVAL    = 2.0;  // seconds between shot cycles
 const FLASH_DURATION   = 0.5;  // seconds — direction telegraph before firing
 const BULLET_SPEED     = 160;  // px/s
-const BULLET_COLOR     = '#9b59b6';
+const BULLET_COLOR     = '#ff4444';
 const BOB_AMPLITUDE    = 4;    // px vertical sine bob
 const BOB_FREQUENCY    = 2;    // cycles per second
 

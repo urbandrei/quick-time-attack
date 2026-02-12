@@ -5,7 +5,7 @@ import { resolveWallCollision } from '../collision.js';
 const AIM_DURATION       = 1.0;   // seconds — telegraph: aiming at player
 const TELEPORT_DURATION  = 0.3;   // seconds — brief pause at new position
 const BULLET_SPEED       = 180;   // px/s — aimed shot
-const BULLET_COLOR       = '#2ecc71';
+const BULLET_COLOR       = '#ff4444';
 const AIM_LINE_LENGTH    = 40;    // px — visual telegraph line
 
 export class Letter extends Enemy {

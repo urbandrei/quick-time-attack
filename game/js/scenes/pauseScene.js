@@ -1,5 +1,6 @@
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 import { input } from '../input.js';
+import { audio } from '../systems/audio.js';
 
 const MENU_ITEMS = [
   { label: 'Resume',    enabled: true },
@@ -24,6 +25,7 @@ class PauseScene {
   update(dt) {
     // Escape / pause action → resume
     if (input.isActionJustPressed('pause')) {
+      audio.playSFX('unpause');
       this.game.popScene();
       return;
     }
@@ -31,12 +33,15 @@ class PauseScene {
     // Keyboard navigation
     if (input.isActionJustPressed('moveUp')) {
       this._moveToPreviousEnabled();
+      audio.playSFX('menuHover');
     } else if (input.isActionJustPressed('moveDown')) {
       this._moveToNextEnabled();
+      audio.playSFX('menuHover');
     }
 
     // Keyboard select
     if (input.isKeyJustPressed('Enter') || input.isActionJustPressed('interact')) {
+      audio.playSFX('menuSelect');
       this._executeSelected();
     }
 
@@ -63,6 +68,7 @@ class PauseScene {
           mouse.x >= hb.x && mouse.x <= hb.x + hb.w &&
           mouse.y >= hb.y && mouse.y <= hb.y + hb.h
         ) {
+          audio.playSFX('menuSelect');
           this._executeItem(i);
           break;
         }

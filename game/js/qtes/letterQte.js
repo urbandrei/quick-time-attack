@@ -1,5 +1,6 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT = 2.5; // seconds
@@ -35,12 +36,14 @@ export class LetterQTE extends QTE {
 
     const expected = this.word[this.typedIndex];
     if (event.key.toUpperCase() === expected) {
+      audio.playSFX('qteClick');
       this.typedIndex++;
       if (this.typedIndex >= this.word.length) {
         this.succeed();
       }
     } else {
       // Wrong key — reset progress
+      audio.playSFX('menuBack');
       this.typedIndex = 0;
       this.wrongFlash = WRONG_FLASH_DURATION;
     }

@@ -15,6 +15,8 @@ import { achievements } from '../systems/achievements.js';
 import { HitstopManager } from '../systems/hitstop.js';
 import { ScreenFlash } from '../systems/screenFlash.js';
 import { ParticlePool, emitDeathBurst, emitWallDust } from '../systems/particles.js';
+import { Vignette } from '../systems/vignette.js';
+import { audio } from '../systems/audio.js';
 
 // Number of frames within which a bullet hit is nullified by a QTE trigger
 const QTE_PRIORITY_FRAMES = 3;
@@ -70,6 +72,7 @@ class GameplayScene {
     this.hud = new HUD();
     this.hitstop = new HitstopManager();
     this.screenFlash = new ScreenFlash();
+    this.vignette = new Vignette();
     this.particles = new ParticlePool();
     this.transition = null;
     this.enemiesKilled = 0;
@@ -148,6 +151,9 @@ class GameplayScene {
         homingSpeed: 0,
       };
     }
+
+    // Timer warning tracking
+    this._lastTimerWarnSec = Infinity;
 
     // Coffee Break — exit open immediately, no timer
     if (levelInfo.challengeType === CHALLENGE_TYPES.COFFEE_BREAK) {
@@ -229,6 +235,8 @@ class GameplayScene {
       levelDepth: this.levelManager.levelDepth,
     });
 
+    audio.playSFX('falling');
+
     this.transition = {
       phase: 'falling',
       timer: 0,
@@ -242,7 +250,16 @@ class GameplayScene {
   update(dt) {
     // ── Always-update systems (even during hitstop and transitions) ──
     this.screenFlash.update(dt);
+    this.vignette.update(dt, {
+      lives: this.player ? this.player.lives : 3,
+      isQTEActive: this.qteActive,
+    });
     this.particles.update(dt);
+
+    // Update audio listener to player position
+    if (this.player) {
+      audio.setListenerPosition(this.player.x, this.player.y);
+    }
 
     // ── Transition animation (overrides normal gameplay) ───────────────
     if (this.transition) {
@@ -251,6 +268,7 @@ class GameplayScene {
     }
 
     if (input.isActionJustPressed('pause')) {
+      audio.playSFX('pause');
       this.game.pushScene(new PauseScene(this.game));
       return;
     }
@@ -267,6 +285,7 @@ class GameplayScene {
       if (this.levelTimer <= 0) {
         this.levelTimer = 0;
         if (!this.gameOverPushed) {
+          audio.playSFX('timerExpire');
           this.player.dead = true;
           this.gameOverPushed = true;
           this.game.pushScene(new GameOverScene(this.game, {
@@ -277,9 +296,101 @@ class GameplayScene {
         }
         return;
       }
+
+      // Timer warning — tick every second when < 10s
+      if (this.levelTimer <= 10) {
+        const sec = Math.ceil(this.levelTimer);
+        if (sec !== this._lastTimerWarnSec) {
+          this._lastTimerWarnSec = sec;
+          audio.playSFX('timerWarning');
+        }
+      }
     }
 
     this.player.update(dt, this.walls);
+
+    // ── Dash juice ──
+    if (this.player._dashJustStarted) {
+      audio.playSFX('dash');
+      this.camera.shake(0.15);
+      const bddx = this.player.dashDirX;
+      const bddy = this.player.dashDirY;
+      const bperpX = -bddy;
+      const bperpY = bddx;
+      const burstX = this.player.x - bddx * 16;
+      const burstY = this.player.y - bddy * 16;
+      // V-shaped wake burst — left side
+      this.particles.emit(burstX, burstY, {
+        vx: bperpX * 180 - bddx * 100,
+        vy: bperpY * 180 - bddy * 100,
+        vxRandom: 50, vyRandom: 50,
+        life: 0.3, lifeRandom: 0.12,
+        size: 5, sizeRandom: 3, endSize: 0,
+        color: '#00ffff', endColor: '#004466',
+        friction: 0.88, gravity: 0,
+      }, 8);
+      // V-shaped wake burst — right side
+      this.particles.emit(burstX, burstY, {
+        vx: -bperpX * 180 - bddx * 100,
+        vy: -bperpY * 180 - bddy * 100,
+        vxRandom: 50, vyRandom: 50,
+        life: 0.3, lifeRandom: 0.12,
+        size: 5, sizeRandom: 3, endSize: 0,
+        color: '#00ffff', endColor: '#004466',
+        friction: 0.88, gravity: 0,
+      }, 8);
+      // Center backward burst
+      this.particles.emit(burstX, burstY, {
+        vx: -bddx * 120, vy: -bddy * 120,
+        vxRandom: 40, vyRandom: 40,
+        life: 0.2, lifeRandom: 0.1,
+        size: 3, sizeRandom: 2, endSize: 0,
+        color: '#88eeff', endColor: '#002233',
+        friction: 0.9, gravity: 0,
+      }, 6);
+      this.player._dashJustStarted = false;
+    }
+    if (this.player.dashing) {
+      // Boat-wake: particles pushed out perpendicular to dash direction
+      const ddx = this.player.dashDirX;
+      const ddy = this.player.dashDirY;
+      // Perpendicular vectors (two sides of the wake)
+      const perpX = -ddy;
+      const perpY = ddx;
+      const wakeSpeed = 120;
+      const backDrift = 40; // slight backward drift
+
+      // Left wake
+      this.particles.emit(this.player.x, this.player.y, {
+        vx: perpX * wakeSpeed - ddx * backDrift,
+        vy: perpY * wakeSpeed - ddy * backDrift,
+        vxRandom: 25, vyRandom: 25,
+        life: 0.25, lifeRandom: 0.1,
+        size: 4, sizeRandom: 2, endSize: 0,
+        color: '#00ffff', endColor: '#002233',
+        friction: 0.88, gravity: 0,
+      }, 3);
+      // Right wake
+      this.particles.emit(this.player.x, this.player.y, {
+        vx: -perpX * wakeSpeed - ddx * backDrift,
+        vy: -perpY * wakeSpeed - ddy * backDrift,
+        vxRandom: 25, vyRandom: 25,
+        life: 0.25, lifeRandom: 0.1,
+        size: 4, sizeRandom: 2, endSize: 0,
+        color: '#00ffff', endColor: '#002233',
+        friction: 0.88, gravity: 0,
+      }, 3);
+      // Small center sparkles
+      this.particles.emit(this.player.x, this.player.y, {
+        vx: -ddx * 20, vy: -ddy * 20,
+        vxRandom: 15, vyRandom: 15,
+        life: 0.1, lifeRandom: 0.05,
+        size: 2, sizeRandom: 1, endSize: 0,
+        color: '#ffffff', endColor: '#00aacc',
+        friction: 0.8, gravity: 0,
+      }, 2);
+    }
+
     this.bullets.update(dt, this.walls);
 
     // Emit wall dust for bullet-wall collisions
@@ -294,7 +405,7 @@ class GameplayScene {
 
     // ── Player-enemy QTE collision (AABB vs AABB, checked FIRST) ──────
     // QTE takes priority over bullet damage within a 3-frame window.
-    if (!this.player.dead && !this.player.invulnerable && !this.qteActive) {
+    if (!this.player.dead && (!this.player.invulnerable || this.player.dashing) && !this.qteActive) {
       const qteEnemy = this._checkQTECollision();
 
       if (qteEnemy) {
@@ -339,7 +450,9 @@ class GameplayScene {
             this.hitstop.freeze(5);
             this.screenFlash.flash('#ff0000', 0.08);
             this.camera.shake(0.4);
+            this.camera.zoomPunch(0.05);
             this.player.squash(0.3, 0.15);
+            audio.playSFX('playerDamage');
           }
         }
       }
@@ -360,7 +473,9 @@ class GameplayScene {
             this.hitstop.freeze(5);
             this.screenFlash.flash('#ff0000', 0.08);
             this.camera.shake(0.4);
+            this.camera.zoomPunch(0.05);
             this.player.squash(0.3, 0.15);
+            audio.playSFX('playerDamage');
           }
           break; // only one damage per frame
         }
@@ -396,6 +511,7 @@ class GameplayScene {
           color: '#44ff88', endColor: '#ffffff',
           friction: 0.9, gravity: 40,
         }, 12);
+        audio.playSFX('challengeSafe', hx, hy);
       }
     }
 
@@ -420,6 +536,7 @@ class GameplayScene {
           if (dx * dx + dy * dy < (this.player.wallRadius + this.keyItem.radius) ** 2) {
             this.keyItem.collected = true;
             this.hasKey = true;
+            audio.playSFX('keyPickup');
           }
         }
         // Player enters starting room with key → key starts homing to hole
@@ -446,6 +563,7 @@ class GameplayScene {
             color: '#44ff88', endColor: '#ffffff',
             friction: 0.9, gravity: 50,
           }, 15);
+          audio.playSFX('holeOpen', hx, hy);
         }
       }
     }
@@ -460,6 +578,7 @@ class GameplayScene {
         // Fleeing a challenge room costs a life
         if (this.challengeFleeMode) {
           this.player.damage();
+          audio.playSFX('fleePenalty');
         }
         this._startTransition();
         return;
@@ -495,6 +614,7 @@ class GameplayScene {
             color: '#44ff88', endColor: '#ffffff',
             friction: 0.9, gravity: 60,
           }, 20);
+          audio.playSFX('holeOpen', hx, hy);
         } else {
           this.keyItem.homingSpeed += KEY_HOMING_ACCEL * dt;
           const step = Math.min(this.keyItem.homingSpeed * dt, dist);
@@ -569,10 +689,11 @@ class GameplayScene {
 
       case 'landing':
         if (this.transition.timer >= LAND_DURATION) {
-          // Impact — squash + camera shake + particles + blast wave
+          // Impact — squash + camera shake + zoom punch + particles + blast wave
           this.transition.phase = 'squash';
           this.transition.timer = 0;
           this.camera.shake(0.6);
+          this.camera.zoomPunch(0.1);
           this.particles.addBlastWave(this.player.x, this.player.y, 50, 0.3);
           this.particles.emit(this.player.x, this.player.y, {
             vx: 0, vy: 0, vxRandom: 120, vyRandom: 60,
@@ -581,6 +702,7 @@ class GameplayScene {
             color: '#aaaaaa', endColor: '#666666',
             friction: 0.85, gravity: 80,
           }, 10);
+          audio.playSFX('landing');
         }
         // Fall through to tick shake
         this.camera._updateShake(dt);
@@ -666,6 +788,7 @@ class GameplayScene {
         this.particles.addBlastWave(blastX, blastY, BLAST_RADIUS * 0.6, 0.4, '#ffffff');
         this.camera.zoomPunch(0.15);
         this.camera.kick(blastX, blastY, 25);
+        audio.playSFX('qteSuccess', blastX, blastY);
 
         // Kill the QTE target
         e.takeDamage();
@@ -688,11 +811,13 @@ class GameplayScene {
         // Heart: grant extra life (capped at 5)
         if (e.enemyType === 'heart') {
           this.player.addLife();
+          audio.playSFX('lifeGain');
         }
 
         // Clock: grant +5 seconds to level timer
         if (e.enemyType === 'clock') {
           this.levelTimer += 5;
+          audio.playSFX('timeBonus');
         }
 
         // Boss: decrement HP, open exit when defeated
@@ -715,6 +840,7 @@ class GameplayScene {
               color: '#44ff88', endColor: '#ffffff',
               friction: 0.9, gravity: 50,
             }, 20);
+            audio.playSFX('bossDefeat', hx, hy);
           }
         }
 
@@ -726,6 +852,7 @@ class GameplayScene {
         this.screenFlash.flash('#ff0000', 0.15);
         this.camera.shake(0.5);
         this.camera.zoomPunch(0.05);
+        audio.playSFX('qteFail');
 
         // Player takes damage (loses life + becomes invulnerable for 1s)
         this.player.damage();
@@ -775,6 +902,7 @@ class GameplayScene {
           color: '#ffaa00', endColor: '#ffffff',
           friction: 0.9, gravity: 50,
         }, 15);
+        audio.playSFX('generatorOn', generator.x, generator.y);
 
         if (this.generators.every(g => g.completed)) {
           this.challengeComplete = true;
@@ -792,6 +920,7 @@ class GameplayScene {
             color: '#44ff88', endColor: '#ffffff',
             friction: 0.9, gravity: 50,
           }, 18);
+          audio.playSFX('holeOpen', hx, hy);
         }
         this.qteActive = false;
       },
@@ -855,6 +984,9 @@ class GameplayScene {
 
     // Screen flash overlay (after HUD)
     this.screenFlash.render(ctx);
+
+    // Vignette overlay (after screen flash)
+    this.vignette.render(ctx);
 
     // Splash overlay (covers everything during splash phase)
     if (this.transition && this.transition.phase === 'splash') {

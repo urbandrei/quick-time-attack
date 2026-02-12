@@ -1,5 +1,6 @@
 import { QTE } from './qte.js';
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
+import { audio } from '../systems/audio.js';
 
 // ── Tuning constants ────────────────────────────────────────────────────
 const TIME_LIMIT   = 3.5;   // seconds — slightly generous for a platformer
@@ -166,6 +167,7 @@ export class ControllerQTE extends QTE {
         this.keysHeld.jump = isDown;
         if (isDown && !event.repeat) {
           this.jumpPressed = true;
+          audio.playSFX('qteClick');
         }
         break;
     }
