@@ -121,6 +121,7 @@ class AudioManager {
 
     // Voicelines
     this._voicelineBuffers = {};
+    this._currentVoicelineSource = null;
   }
 
   init() {
@@ -243,6 +244,12 @@ class AudioManager {
     const ctx = this.engine.ctx;
     if (!ctx || !buffer) return;
 
+    // Interrupt any currently playing voiceline
+    if (this._currentVoicelineSource) {
+      try { this._currentVoicelineSource.stop(); } catch {}
+      this._currentVoicelineSource = null;
+    }
+
     const filter = ctx.createBiquadFilter();
     filter.type = 'bandpass';
     filter.frequency.value = ANNOUNCE_FILTER_FREQ;
@@ -285,6 +292,10 @@ class AudioManager {
     src.buffer = buffer;
     src.connect(filter);
     src.start();
+    this._currentVoicelineSource = src;
+    src.onended = () => {
+      if (this._currentVoicelineSource === src) this._currentVoicelineSource = null;
+    };
   }
 
   // ── Gameplay music ───────────────────────────────────────────────────

@@ -47,7 +47,7 @@ export class Bat extends Enemy {
   // ── QTE gate ──────────────────────────────────────────────────────────
 
   get canTriggerQTE() {
-    return this.active && this.state !== 'lunge' && this.state !== 'stunned';
+    return this.active && this.state !== 'lunge' && this.state !== 'stunned' && !this.falling && !this.justLanded;
   }
 
   /** True while the bat is a projectile (damages player on contact). */
@@ -82,6 +82,14 @@ export class Bat extends Enemy {
 
   update(dt, walls, player, bullets) {
     if (!this.active) return;
+    if (this.falling) {
+      this.fallTimer += dt;
+      if (this.fallTimer >= this.fallDuration) {
+        this.falling = false;
+        this.justLanded = true;
+      }
+      return;
+    }
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);
@@ -196,6 +204,7 @@ export class Bat extends Enemy {
   }
 
   render(ctx) {
+    if (this.falling) { this._renderFalling(ctx); return; }
     const drawColor = this._getDrawColor();
 
     if (this.state === 'windup') {

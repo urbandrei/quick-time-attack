@@ -40,7 +40,7 @@ export class Controller extends Enemy {
   // ── QTE gate ──────────────────────────────────────────────────────────
 
   get canTriggerQTE() {
-    return this.active && this.state !== 'stunned';
+    return this.active && this.state !== 'stunned' && !this.falling && !this.justLanded;
   }
 
   get isAnticipating() {
@@ -55,6 +55,14 @@ export class Controller extends Enemy {
 
   update(dt, walls, player, bullets) {
     if (!this.active) return;
+    if (this.falling) {
+      this.fallTimer += dt;
+      if (this.fallTimer >= this.fallDuration) {
+        this.falling = false;
+        this.justLanded = true;
+      }
+      return;
+    }
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);

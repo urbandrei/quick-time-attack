@@ -24,7 +24,7 @@ export class Clock extends Enemy {
   // ── QTE gate ──────────────────────────────────────────────────────────
 
   get canTriggerQTE() {
-    return this.active && this.state !== 'stunned';
+    return this.active && this.state !== 'stunned' && !this.falling && !this.justLanded;
   }
 
   resetToIdle() {
@@ -38,6 +38,14 @@ export class Clock extends Enemy {
 
   update(dt, walls, player, bullets) {
     if (!this.active) return;
+    if (this.falling) {
+      this.fallTimer += dt;
+      if (this.fallTimer >= this.fallDuration) {
+        this.falling = false;
+        this.justLanded = true;
+      }
+      return;
+    }
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);
@@ -71,6 +79,7 @@ export class Clock extends Enemy {
   // ── Render ────────────────────────────────────────────────────────────
 
   render(ctx) {
+    if (this.falling) { this._renderFalling(ctx); return; }
     // Gentle bob effect
     const bob = Math.sin(this.stateTimer * 3) * 2;
     ctx.fillStyle = this._getColor();

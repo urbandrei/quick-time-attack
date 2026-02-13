@@ -89,7 +89,7 @@ export class Enemy extends Entity {
    * Subclasses override to add restrictions (e.g., Bat cannot be QTE'd mid-lunge).
    */
   get canTriggerQTE() {
-    return this.active && this.state !== 'stunned' && !this.falling;
+    return this.active && this.state !== 'stunned' && !this.falling && !this.justLanded;
   }
 
   /**

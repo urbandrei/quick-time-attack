@@ -506,9 +506,10 @@ class GameplayScene {
     }
 
     // ── Enemy landing effects (falling animation complete) ────────────
+    // Note: justLanded is cleared AFTER the QTE check below so that
+    // canTriggerQTE returns false on the landing frame.
     for (const enemy of this.enemies) {
       if (!enemy.justLanded) continue;
-      enemy.justLanded = false;
 
       // VFX — lighter than player landing (multiple can land at once)
       this.camera.shake(0.3);
@@ -531,7 +532,7 @@ class GameplayScene {
         const dx = this.player.x - enemy.x;
         const dy = this.player.y - enemy.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < enemy.width / 2 + this.player.bulletRadius) {
+        if (dist < enemy.width / 2 + this.player.wallRadius) {
           if (this.player.damage()) {
             this.hitstop.freeze(5);
             this.screenFlash.flash('#ff0000', 0.08);
@@ -558,6 +559,11 @@ class GameplayScene {
         this._triggerQTE(qteEnemy);
         return; // skip bullet checks this frame
       }
+    }
+
+    // ── Clear justLanded now that QTE check has passed ─────────────
+    for (const enemy of this.enemies) {
+      enemy.justLanded = false;
     }
 
     // ── Player-generator collision (Power Up) ───────────────────────
@@ -897,7 +903,11 @@ class GameplayScene {
     const enemy = spawnChallengeEnemy(
       this.level.rooms[0],
       this.enemies,
-      { playerPos: { x: this.player.x, y: this.player.y }, levelDepth: this.levelManager.levelDepth },
+      {
+        playerPos: { x: this.player.x, y: this.player.y },
+        playerVel: { x: this.player.vx, y: this.player.vy },
+        levelDepth: this.levelManager.levelDepth,
+      },
     );
     enemy.startFall(0.5);
     this.enemies.push(enemy);
@@ -1102,6 +1112,17 @@ class GameplayScene {
         this.camera.zoomPunch(0.1);
         { const _v = ['easy', 'epic', 'goodjob', 'nice']; audio.playVoiceline(_v[Math.floor(Math.random() * _v.length)]); }
 
+        // Destroy bullets and knock back enemies near generator
+        this.bullets.destroyInRadius(generator.x, generator.y, BLAST_RADIUS);
+        for (const enemy of this.enemies) {
+          if (!enemy.active) continue;
+          const dx = enemy.x - generator.x;
+          const dy = enemy.y - generator.y;
+          if (dx * dx + dy * dy <= BLAST_RADIUS * BLAST_RADIUS) {
+            enemy.applyKnockback(generator.x, generator.y, KNOCKBACK_FORCE);
+          }
+        }
+
         if (this.generators.every(g => g.completed)) {
           this.challengeComplete = true;
           const hx = this.level.exitHoleX;
@@ -1173,9 +1194,9 @@ class GameplayScene {
     // Draw floor tutorial text
     if (this.floorText) this._renderFloorText(ctx);
 
-    // Draw enemies
+    // Draw enemies (non-falling only — falling indicators drawn above player)
     for (const enemy of this.enemies) {
-      if (enemy.active) enemy.render(ctx);
+      if (enemy.active && !enemy.falling) enemy.render(ctx);
     }
 
     // Draw bullets
@@ -1189,6 +1210,11 @@ class GameplayScene {
       this._renderTransitionPlayer(ctx);
     } else {
       this.player.render(ctx);
+    }
+
+    // Draw falling enemy indicators on top of player so they're always visible
+    for (const enemy of this.enemies) {
+      if (enemy.active && enemy.falling) enemy.render(ctx);
     }
 
     this.camera.removeTransform(ctx);

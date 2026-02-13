@@ -31,7 +31,7 @@ export class Gopher extends Enemy {
   // ── QTE gate ──────────────────────────────────────────────────────────
 
   get canTriggerQTE() {
-    if (!this.active || this.state === 'stunned') return false;
+    if (!this.active || this.state === 'stunned' || this.falling || this.justLanded) return false;
     // Hittable while burrowing and for a brief grace period after going underground
     if (this.state === 'underground') return this.burrowGrace > 0;
     return true;
@@ -68,6 +68,14 @@ export class Gopher extends Enemy {
 
   update(dt, walls, player, bullets) {
     if (!this.active) return;
+    if (this.falling) {
+      this.fallTimer += dt;
+      if (this.fallTimer >= this.fallDuration) {
+        this.falling = false;
+        this.justLanded = true;
+      }
+      return;
+    }
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);
@@ -133,6 +141,7 @@ export class Gopher extends Enemy {
   // ── Render ────────────────────────────────────────────────────────────
 
   render(ctx) {
+    if (this.falling) { this._renderFalling(ctx); return; }
     switch (this.state) {
       case 'underground':
         // Not visible — optionally show a small dirt indicator

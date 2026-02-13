@@ -20,8 +20,8 @@ const ENEMY_CLASSES = {
 
 function getAvailableTypes(levelDepth) {
   const types = ['bat', 'gopher'];
-  if (levelDepth >= 5) types.push('spinningTop', 'letter');
-  if (levelDepth >= 9) types.push('cowboy', 'controller');
+  if (levelDepth >= 3) types.push('spinningTop', 'letter');
+  if (levelDepth >= 5) types.push('cowboy', 'controller');
   return types;
 }
 
@@ -201,10 +201,11 @@ export function spawnEnemies(level, levelDepth, options) {
 
 /**
  * Spawn a single random enemy for Challenge/Boss trickle waves.
+ * Enemy lands at or ahead of the player (clamped within the room).
  *
  * @param {import('./room.js').Room} room
  * @param {import('../enemies/enemy.js').Enemy[]} existingEnemies
- * @param {{ playerPos: { x: number, y: number } }} options
+ * @param {{ playerPos: { x: number, y: number }, playerVel?: { x: number, y: number }, levelDepth?: number }} options
  * @returns {import('../enemies/enemy.js').Enemy}
  */
 export function spawnChallengeEnemy(room, existingEnemies, options) {
@@ -212,12 +213,8 @@ export function spawnChallengeEnemy(room, existingEnemies, options) {
   const availableTypes = getAvailableTypes(levelDepth);
   const difficulty = getDifficulty(levelDepth);
   const type = availableTypes[Math.floor(Math.random() * availableTypes.length)];
-  const occupied = existingEnemies
-    .filter(e => e.active)
-    .map(e => ({ x: e.x, y: e.y }));
-  const avoidPoints = [{ x: options.playerPos.x, y: options.playerPos.y, isPlayer: true }];
 
-  const pos = findSpawnPosition(room, occupied, avoidPoints);
+  const pos = _pickDropPosition(room, options.playerPos, options.playerVel);
   const EnemyClass = ENEMY_CLASSES[type];
   const enemy = new EnemyClass({ x: pos.x, y: pos.y, enemyType: type, difficulty });
 
@@ -229,6 +226,40 @@ export function spawnChallengeEnemy(room, existingEnemies, options) {
   }
 
   return enemy;
+}
+
+const DROP_LEAD_TIME = 0.4;   // seconds of velocity projection
+const DROP_SCATTER = 20;      // random offset radius (px)
+const DROP_MARGIN = 24;       // min distance from walls (px)
+
+/**
+ * Pick a drop position near the player or ahead of them.
+ * Adds random scatter so drops aren't perfectly stacked.
+ */
+function _pickDropPosition(room, playerPos, playerVel) {
+  // Project ahead based on player velocity
+  let tx = playerPos.x;
+  let ty = playerPos.y;
+  if (playerVel) {
+    tx += playerVel.x * DROP_LEAD_TIME;
+    ty += playerVel.y * DROP_LEAD_TIME;
+  }
+
+  // Add random scatter
+  const angle = Math.random() * Math.PI * 2;
+  const dist = Math.random() * DROP_SCATTER;
+  tx += Math.cos(angle) * dist;
+  ty += Math.sin(angle) * dist;
+
+  // Clamp within room floor bounds
+  const minX = room.floorX + DROP_MARGIN;
+  const maxX = room.floorX + room.floorWidth - DROP_MARGIN;
+  const minY = room.floorY + DROP_MARGIN;
+  const maxY = room.floorY + room.floorHeight - DROP_MARGIN;
+  tx = Math.max(minX, Math.min(maxX, tx));
+  ty = Math.max(minY, Math.min(maxY, ty));
+
+  return { x: tx, y: ty };
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────

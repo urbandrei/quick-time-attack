@@ -27,7 +27,7 @@ export class SpinningTop extends Enemy {
   // ── QTE gate ──────────────────────────────────────────────────────────
 
   get canTriggerQTE() {
-    return this.active && this.state !== 'stunned';
+    return this.active && this.state !== 'stunned' && !this.falling && !this.justLanded;
   }
 
   get isAnticipating() {
@@ -52,6 +52,14 @@ export class SpinningTop extends Enemy {
 
   update(dt, walls, player, bullets) {
     if (!this.active) return;
+    if (this.falling) {
+      this.fallTimer += dt;
+      if (this.fallTimer >= this.fallDuration) {
+        this.falling = false;
+        this.justLanded = true;
+      }
+      return;
+    }
     this.stateTimer += dt;
     this._updateKnockback(dt);
     this._updateScale(dt);
@@ -107,6 +115,7 @@ export class SpinningTop extends Enemy {
   // ── Render ────────────────────────────────────────────────────────────
 
   render(ctx) {
+    if (this.falling) { this._renderFalling(ctx); return; }
     switch (this.state) {
       case 'winding': {
         // Wobble effect — oscillate rotation to telegraph the attack
