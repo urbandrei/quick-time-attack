@@ -281,6 +281,7 @@ class GameplayScene {
     });
 
     audio.playSFX('falling');
+    audio.stopElevatorMusic();
     audio.resetLevelMusic();
 
     this.transition = {
@@ -852,6 +853,10 @@ class GameplayScene {
           } else {
             audio.playGameplayMusic();
           }
+          // Coffee break: crossfade to elevator music
+          if (this.levelManager.challengeType === CHALLENGE_TYPES.COFFEE_BREAK) {
+            audio.startElevatorMusic();
+          }
         }
         break;
 
@@ -909,7 +914,7 @@ class GameplayScene {
         levelDepth: this.levelManager.levelDepth,
       },
     );
-    enemy.startFall(0.5);
+    enemy.startFall(0.8);
     this.enemies.push(enemy);
   }
 
@@ -1277,12 +1282,27 @@ class GameplayScene {
     // Floor depth
     ctx.fillStyle = '#888888';
     ctx.font = '12px "Press Start 2P"';
-    ctx.fillText(`FLOOR ${this.levelManager.levelDepth}`, cx, cy - 20);
+    ctx.fillText(`FLOOR ${this.levelManager.levelDepth}`, cx, cy - 10);
 
     // Challenge name
     ctx.fillStyle = '#ffffff';
     ctx.font = '22px "Press Start 2P"';
-    ctx.fillText(this.challengeDisplayName, cx, cy + 20);
+    ctx.fillText(this.challengeDisplayName, cx, cy + 30);
+
+    // Timer bar (same layout as QTE bar, always white)
+    const barW = 400;
+    const barH = 12;
+    const barY = 60;
+    const barX = (CANVAS_WIDTH - barW) / 2;
+    const fraction = Math.max(0, 1 - this.transition.timer / SPLASH_DURATION);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(barX, barY, barW * fraction, barH);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
   }
 
   _renderKeyItem(ctx) {

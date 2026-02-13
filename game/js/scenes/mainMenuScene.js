@@ -104,7 +104,7 @@ export class MainMenuScene {
     this._voicelineTimer += dt;
     if (this._voicelineTimer >= this._voicelineInterval) {
       this._voicelineTimer = 0;
-      this._voicelineInterval = 30 + Math.random() * 10;
+      this._voicelineInterval = 15 + Math.random() * 5;
       if (this._voicelineFirst) {
         this._voicelineFirst = false;
         audio.playVoiceline('hello');

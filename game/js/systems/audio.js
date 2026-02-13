@@ -35,6 +35,11 @@ const SPLASH_DUCK = 0.25;             // gain multiplier during level splash scr
 const PAUSE_PITCH = 0.5;              // playback rate when paused
 const PAUSE_DUCK = 0.3;               // gain multiplier when paused
 
+// Elevator music (coffee break)
+const ELEVATOR_PATH = 'sounds/659889__blondpanda__short-elevator-music-loop.wav';
+const ELEVATOR_VOLUME = 0.25;
+const ELEVATOR_FADE_TIME = 1.5; // seconds — crossfade duration
+
 // Explosion SFX (file-based)
 const EXPLOSION_PATH = 'sounds/93741__waveadventurer__explosion.mp3';
 const EXPLOSION_OFFSET = 0.75;         // skip first 0.75s of the file
@@ -62,6 +67,10 @@ const VOICELINE_NAMES = [
 
 // QTE speedup — exponential from 1.0 → QTE_PITCH_MAX over the QTE duration
 const QTE_PITCH_MAX = 1.8;
+
+// Shepard tone delay — stays near-silent for this many seconds, then ramps
+const SHEPARD_QUIET_DURATION = 15; // seconds
+const SHEPARD_QUIET_VOLUME = 0; // silent during quiet phase
 
 // Spatial audio: full volume within inner radius, silent beyond outer
 const SPATIAL_INNER = 80;   // px — full volume
@@ -107,11 +116,18 @@ class AudioManager {
 
     // QTE mode
     this._qteMode = false;
+    this._shepardVolume = 0;
 
     // Warning beep
     this._warningActive = false;
     this._beepSource = null;
     this._beepGain = null;
+
+    // Elevator music (coffee break)
+    this._elevatorBuffer = null;
+    this._elevatorSource = null;
+    this._elevatorGain = null;
+    this._elevatorActive = false;
 
     // Explosion
     this._explosionBuffer = null;
@@ -447,9 +463,23 @@ class AudioManager {
 
     // Progress: 0 at start → 1 at time-up
     const progress = 1 - levelTimer / levelTimeTotal;
-    const shepardVol = progress * SHEPARD_MAX_VOLUME;
-    if (this._shepard1Gain) this._shepard1Gain.gain.value = shepardVol;
-    if (this._shepard2Gain) this._shepard2Gain.gain.value = shepardVol;
+    const elapsed = levelTimeTotal - levelTimer;
+
+    // Shepard tones: barely audible for the first SHEPARD_QUIET_DURATION seconds,
+    // then ramp from quiet → max over the remaining time
+    let shepardVol;
+    if (elapsed < SHEPARD_QUIET_DURATION) {
+      shepardVol = SHEPARD_QUIET_VOLUME;
+    } else {
+      const rampTime = levelTimeTotal - SHEPARD_QUIET_DURATION;
+      const rampProgress = rampTime > 0 ? (elapsed - SHEPARD_QUIET_DURATION) / rampTime : 1;
+      shepardVol = SHEPARD_QUIET_VOLUME + (SHEPARD_MAX_VOLUME - SHEPARD_QUIET_VOLUME) * rampProgress;
+    }
+    this._shepardVolume = shepardVol;
+    if (!this._qteMode) {
+      if (this._shepard1Gain) this._shepard1Gain.gain.value = shepardVol;
+      if (this._shepard2Gain) this._shepard2Gain.gain.value = shepardVol;
+    }
 
     // Bass pitch rises with progress (only when not in QTE mode, which controls rate separately)
     if (!this._qteMode && this._bassSource) {
@@ -468,12 +498,18 @@ class AudioManager {
 
   enterQTEMode() {
     this._qteMode = true;
-    this._setGameplayRate(1.0);
+    // Capture current playback rate and shepard volume so QTE continues from where gameplay left off
+    this._qteStartRate = this._bassSource ? this._bassSource.playbackRate.value : 1.0;
+    this._qteStartShepardVol = this._shepardVolume || SHEPARD_QUIET_VOLUME;
   }
 
   exitQTEMode() {
     this._qteMode = false;
     this._setGameplayRate(1.0);
+    // Restore shepard volume to whatever setLevelProgress last computed
+    const vol = this._shepardVolume || 0;
+    if (this._shepard1Gain) this._shepard1Gain.gain.value = vol;
+    if (this._shepard2Gain) this._shepard2Gain.gain.value = vol;
   }
 
   /**
@@ -481,16 +517,78 @@ class AudioManager {
    */
   setQTEProgress(progress) {
     if (!this._qteMode) return;
-    // Exponential curve: starts at 1.0, barely moves at first, rockets up near the end
-    // rate = 1.0 * (max/1.0)^progress  →  at p=0: 1.0, at p=1: QTE_PITCH_MAX
-    const rate = Math.pow(QTE_PITCH_MAX, progress);
+    const startRate = this._qteStartRate || 1.0;
+    // Exponential curve from current gameplay rate → QTE_PITCH_MAX
+    const rate = startRate * Math.pow(QTE_PITCH_MAX / startRate, progress);
     this._setGameplayRate(rate);
+
+    // Ramp shepard volume from current level → max during QTE
+    const startVol = this._qteStartShepardVol || SHEPARD_QUIET_VOLUME;
+    const vol = startVol + (SHEPARD_MAX_VOLUME - startVol) * progress;
+    if (this._shepard1Gain) this._shepard1Gain.gain.value = vol;
+    if (this._shepard2Gain) this._shepard2Gain.gain.value = vol;
   }
 
   _setGameplayRate(rate) {
     if (this._bassSource) this._bassSource.playbackRate.value = rate;
     if (this._shepard1Source) this._shepard1Source.playbackRate.value = rate;
     if (this._shepard2Source) this._shepard2Source.playbackRate.value = rate;
+  }
+
+  // ── Elevator music (coffee break) ────────────────────────────────────
+
+  /**
+   * Crossfade from gameplay music into elevator music loop.
+   */
+  startElevatorMusic() {
+    const ctx = this.engine.ctx;
+    if (!ctx || !this._elevatorBuffer || this._elevatorActive) return;
+    this._elevatorActive = true;
+
+    const now = ctx.currentTime;
+
+    // Fade out gameplay music
+    if (this._gameplayMusicGain) {
+      this._gameplayMusicGain.gain.setTargetAtTime(0, now, ELEVATOR_FADE_TIME / 3);
+    }
+
+    // Start elevator loop, fade in
+    this._elevatorGain = ctx.createGain();
+    this._elevatorGain.gain.setValueAtTime(0, now);
+    this._elevatorGain.gain.linearRampToValueAtTime(ELEVATOR_VOLUME, now + ELEVATOR_FADE_TIME);
+    this._elevatorGain.connect(this.engine.musicGain);
+
+    this._elevatorSource = ctx.createBufferSource();
+    this._elevatorSource.buffer = this._elevatorBuffer;
+    this._elevatorSource.loop = true;
+    this._elevatorSource.connect(this._elevatorGain);
+    this._elevatorSource.start();
+  }
+
+  /**
+   * Crossfade from elevator music back to gameplay music.
+   */
+  stopElevatorMusic() {
+    const ctx = this.engine.ctx;
+    if (!ctx || !this._elevatorActive) return;
+    this._elevatorActive = false;
+
+    const now = ctx.currentTime;
+
+    // Fade out elevator music, then stop
+    if (this._elevatorGain) {
+      this._elevatorGain.gain.setTargetAtTime(0, now, ELEVATOR_FADE_TIME / 3);
+    }
+    if (this._elevatorSource) {
+      const src = this._elevatorSource;
+      setTimeout(() => { try { src.stop(); } catch {} }, ELEVATOR_FADE_TIME * 1000);
+      this._elevatorSource = null;
+    }
+
+    // Fade gameplay music back in
+    if (this._gameplayMusicGain) {
+      this._gameplayMusicGain.gain.setTargetAtTime(1.0, now, ELEVATOR_FADE_TIME / 3);
+    }
   }
 
   // stubs for unused callers
@@ -538,6 +636,7 @@ class AudioManager {
     load(SHEPARD2_PATH).then(buf => { this._shepard2Buffer = buf; });
     load(BEEP_PATH).then(buf => { this._beepBuffer = buf; });
     load(EXPLOSION_PATH).then(buf => { this._explosionBuffer = buf; });
+    load(ELEVATOR_PATH).then(buf => { this._elevatorBuffer = buf; });
     load(ANNOUNCE_PATH).then(buf => { this._announceBuffer = buf; });
 
     // Voiceline buffers

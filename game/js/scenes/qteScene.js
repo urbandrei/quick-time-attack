@@ -156,13 +156,28 @@ class QTEScene {
     const desc = QTE_TASK_DESC[qteType] || 'GET READY';
     ctx.fillStyle = this.enemy?.color || '#ffffff';
     ctx.font = '20px "Press Start 2P"';
-    ctx.fillText(desc, cx, cy - 20);
+    ctx.fillText(desc, cx, cy - 10);
 
     // Input type indicator
     const inputType = QTE_INPUT_TYPE[qteType] || 'MOUSE';
     ctx.fillStyle = '#aaaaaa';
     ctx.font = '14px "Press Start 2P"';
-    ctx.fillText(`USE ${inputType}`, cx, cy + 30);
+    ctx.fillText(`USE ${inputType}`, cx, cy + 40);
+
+    // Timer bar (always white, no red)
+    const barW = 400;
+    const barH = 12;
+    const barY = 60;
+    const barX = (CANVAS_WIDTH - barW) / 2;
+    const fraction = Math.max(0, 1 - this.splashTimer / SPLASH_DURATION);
+
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+    ctx.fillRect(barX, barY, barW, barH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(barX, barY, barW * fraction, barH);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
   }
 
   onInput(event) {

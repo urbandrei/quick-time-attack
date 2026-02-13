@@ -3,7 +3,7 @@ import { CANVAS_WIDTH, CANVAS_HEIGHT } from '../game.js';
 // Timer bar layout
 const BAR_WIDTH = 400;
 const BAR_HEIGHT = 12;
-const BAR_Y = 40;
+const BAR_Y = 60;
 const BAR_BG = 'rgba(255, 255, 255, 0.2)';
 const BAR_FG = '#ffffff';
 const BAR_LOW = '#e74c3c'; // red when time < 25%
